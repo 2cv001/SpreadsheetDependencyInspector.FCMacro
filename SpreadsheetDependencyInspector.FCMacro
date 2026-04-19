@@ -205,8 +205,8 @@ class RefDialog(QtGui.QDialog):
 
         layout = QtGui.QVBoxLayout()
 
-        self.mode_out = QtGui.QRadioButton("Cellules référencées (sortant)")
-        self.mode_in = QtGui.QRadioButton("Cellules qui référencent la sélection (entrant)")
+        self.mode_out = QtGui.QRadioButton("Cellule sélectionnée -> Cellules utilisées dans la formule")
+        self.mode_in = QtGui.QRadioButton("Cellule sélectionnée -> Cellules l'utilisant dans leur formule")
         self.mode_out.setChecked(True)
 
         self.mode_out.toggled.connect(self.recompute)
@@ -275,7 +275,7 @@ class RefDialog(QtGui.QDialog):
             if re.match(r"^[A-Z]+[0-9]+$", target):
                 formula = self.sheet.getContents(target)
                 if formula:
-                    item.setToolTip(formula)
+                    item.setToolTip(f"Contenu de {target} : {formula}")
 
             # --- Tooltip pour objets FreeCAD ---
             else:
@@ -285,7 +285,7 @@ class RefDialog(QtGui.QDialog):
                     if obj and hasattr(obj, "ExpressionEngine"):
                         for p, expr in obj.ExpressionEngine:
                             if p == prop:
-                                item.setToolTip(expr)
+                                item.setToolTip(f"Expression de {target} : {expr}")
                                 break
                 except:
                     pass
