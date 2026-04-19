@@ -1,0 +1,356 @@
+#SpreadsheetDependencyInspector.FCMacro
+import FreeCAD as App
+import FreeCADGui as Gui
+from PySide import QtGui, QtCore
+import re
+
+# ------------------------------------------------------------
+# Convertit (col,row) → "A1"
+# ------------------------------------------------------------
+def cell_to_addr(col, row):
+    letters = ""
+    c = col
+    while c >= 0:
+        letters = chr(c % 26 + ord('A')) + letters
+        c = c // 26 - 1
+    return f"{letters}{row+1}"
+
+# ------------------------------------------------------------
+# Convertit "A1" → (col,row)
+# ------------------------------------------------------------
+def addr_to_cell(addr):
+    m = re.match(r"([A-Z]+)([0-9]+)", addr)
+    if not m:
+        return None
+    col_letters, row_str = m.groups()
+    col = 0
+    for ch in col_letters:
+        col = col * 26 + (ord(ch) - ord('A') + 1)
+    return (col - 1, int(row_str) - 1)
+
+# ------------------------------------------------------------
+# Extraction brute des références (A1, A1:B5, Alias)
+# ------------------------------------------------------------
+def extract_raw_refs(formula):
+    formula = str(formula).strip()
+
+    # IMPORTANT : si ce n'est pas une formule → aucune référence
+    if not formula.startswith("="):
+        return set()
+
+    refs = set()
+
+    # Références simples A1, B12, Z99
+    for r in re.findall(r"\b[A-Z]+[0-9]+\b", formula):
+        refs.add(r)
+
+    # Plages A1:B5
+    for r in re.findall(r"\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b", formula):
+        refs.add(f"{r[0]}:{r[1]}")
+
+    # Alias (mots alphabétiques)
+    for r in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", formula):
+        refs.add(r)
+
+    return refs
+
+# ------------------------------------------------------------
+# Construit la map alias → adresse A1
+# ------------------------------------------------------------
+def build_alias_map(sheet):
+    alias_map = {}
+    start, end = sheet.getUsedRange()
+    c1, r1 = addr_to_cell(start)
+    c2, r2 = addr_to_cell(end)
+
+    for r in range(r1, r2+1):
+        for c in range(c1, c2+1):
+            addr = cell_to_addr(c, r)
+            alias = sheet.getAlias(addr)
+            if alias:
+                alias_map[alias] = addr
+
+    return alias_map
+
+# ------------------------------------------------------------
+# Résolution alias ↔ adresse
+# ------------------------------------------------------------
+def resolve_refs(sheet, refs, alias_map):
+    resolved = set()
+
+    for r in refs:
+
+        # Plage : on ne résout pas
+        if ":" in r:
+            resolved.add(r)
+            continue
+
+        # Adresse A1
+        if re.match(r"^[A-Z]+[0-9]+$", r):
+            resolved.add(r)
+
+            alias = sheet.getAlias(r)
+            if alias:
+                resolved.add(alias)
+
+            continue
+
+        # Alias → adresse
+        if r in alias_map:
+            addr = alias_map[r]
+            resolved.add(addr)
+            resolved.add(r)
+            continue
+
+    return resolved
+
+# ------------------------------------------------------------
+# Canonicalisation : on garde UNE seule entrée par cellule
+# ------------------------------------------------------------
+def canonicalize(ref, alias_map):
+    if ":" in ref:
+        return ref
+    if re.match(r"^[A-Z]+[0-9]+$", ref):
+        return ref
+    if ref in alias_map:
+        return alias_map[ref]
+    return ref
+
+# ------------------------------------------------------------
+# Format d'affichage : fusion adresse + alias
+# ------------------------------------------------------------
+def format_ref(sheet, ref, alias_map):
+    # Objet FreeCAD → on l'affiche tel quel
+    if not re.match(r"^[A-Z]+[0-9]+$", ref) and ref not in alias_map and ":" not in ref:
+        return ref
+
+    # Plage
+    if ":" in ref:
+        return ref
+
+    # Adresse A1
+    if re.match(r"^[A-Z]+[0-9]+$", ref):
+        alias = sheet.getAlias(ref)
+        if alias:
+            return f"{ref} ({alias})"
+        return ref
+
+    # Alias → adresse
+    if ref in alias_map:
+        addr = alias_map[ref]
+        return f"{addr} ({ref})"
+
+    return ref
+
+# ------------------------------------------------------------
+# Analyse des objets FreeCAD utilisant les cellules sélectionnées
+# ------------------------------------------------------------
+def find_objects_using_cells(sheet, selected_addrs, alias_map):
+    used = set()
+
+    sheet_name = sheet.Name
+    sheet_label = sheet.Label
+
+    # Deux formes possibles :
+    # datas.xxx
+    # <<datasLabel>>.xxx
+    pattern = rf"(?:{re.escape(sheet_name)}|<<{re.escape(sheet_label)}>>)\.([A-Za-z_][A-Za-z0-9_]*)"
+
+    for obj in App.ActiveDocument.Objects:
+        if not hasattr(obj, "ExpressionEngine"):
+            continue
+
+        ee = obj.ExpressionEngine
+        if not ee:
+            continue
+
+        for prop, expr in ee:
+            if not isinstance(expr, str):
+                continue
+
+            refs = re.findall(pattern, expr)
+
+            for sel in selected_addrs:
+                alias = sheet.getAlias(sel)
+
+                for r in refs:
+                    if r == sel or r == alias:
+                        used.add((sel, f"{obj.Name}.{prop}"))
+                        break
+
+    return used
+
+# ------------------------------------------------------------
+# Récupère toutes les adresses utilisées du spreadsheet
+# ------------------------------------------------------------
+def all_cells(sheet):
+    start, end = sheet.getUsedRange()
+    c1, r1 = addr_to_cell(start)
+    c2, r2 = addr_to_cell(end)
+
+    for r in range(r1, r2 + 1):
+        for c in range(c1, c2 + 1):
+            yield cell_to_addr(c, r)
+
+# ------------------------------------------------------------
+# Boîte de dialogue persistante
+# ------------------------------------------------------------
+class RefDialog(QtGui.QDialog):
+    def __init__(self, sheet):
+        super(RefDialog, self).__init__()
+        self.sheet = sheet
+
+        self.setWindowTitle("Analyse des références (Spreadsheet + Objets FreeCAD)")
+        self.setMinimumWidth(350)
+
+        layout = QtGui.QVBoxLayout()
+
+        self.mode_out = QtGui.QRadioButton("Cellules référencées (sortant)")
+        self.mode_in = QtGui.QRadioButton("Cellules qui référencent la sélection (entrant)")
+        self.mode_out.setChecked(True)
+
+        self.mode_out.toggled.connect(self.recompute)
+        self.mode_in.toggled.connect(self.recompute)
+
+        layout.addWidget(self.mode_out)
+        layout.addWidget(self.mode_in)
+
+        self.list = QtGui.QListWidget()
+        layout.addWidget(self.list)
+
+        self.list.itemClicked.connect(self.highlight)
+
+        self.setLayout(layout)
+        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+
+        self.recompute()
+
+    # --------------------------------------------------------
+    # Relit la sélection actuelle dans le Spreadsheet
+    # --------------------------------------------------------
+    def get_current_selection(self):
+        sel = self.sheet.ViewObject.getView().selectedCells()
+        addrs = []
+
+        for item in sel:
+            if len(item) == 2 and isinstance(item[0], int):
+                col, row = item
+                addrs.append(cell_to_addr(col, row))
+            elif len(item) == 2 and isinstance(item[0], str):
+                addrs.append(f"{item[0]}{item[1]}")
+            elif len(item) == 4:
+                col1, row1, col2, row2 = item
+                for c in range(col1, col2+1):
+                    for r in range(row1, row2+1):
+                        addrs.append(cell_to_addr(c, r))
+
+        return addrs
+
+    # --------------------------------------------------------
+    # Recalcul selon le mode
+    # --------------------------------------------------------
+    def recompute(self):
+        self.list.clear()
+
+        selected_addrs = self.get_current_selection()
+        if not selected_addrs:
+            return
+
+        alias_map = build_alias_map(self.sheet)
+
+        if self.mode_out.isChecked():
+            refs = self.compute_outgoing(selected_addrs, alias_map)
+        else:
+            refs = self.compute_incoming(selected_addrs, alias_map)
+
+        # refs est un set de tuples (sel, target)
+        for sel, target in sorted(refs):
+            alias = self.sheet.getAlias(sel)
+            sel_display = f"{sel} ({alias})" if alias else sel
+
+            # Création de l'item
+            item = QtGui.QListWidgetItem(f"{sel_display} → {format_ref(self.sheet, target, alias_map)}")
+
+            # Récupération de la formule brute de la cellule concernée
+            formula = self.sheet.getContents(target) if re.match(r"^[A-Z]+[0-9]+$", target) else None
+
+            # Si c'est une cellule Spreadsheet → tooltip = formule
+            if formula:
+                item.setToolTip(formula)
+
+            self.list.addItem(item)
+
+    # --------------------------------------------------------
+    # Mode sortant
+    # --------------------------------------------------------
+    def compute_outgoing(self, selected_addrs, alias_map):
+        refs = set()
+        for sel in selected_addrs:
+            formula = self.sheet.getContents(sel)
+            raw = extract_raw_refs(formula)
+            resolved = resolve_refs(self.sheet, raw, alias_map)
+            for r in resolved:
+                canon = canonicalize(r, alias_map)
+                refs.add((sel, canon))
+
+        return refs
+
+    # --------------------------------------------------------
+    # Mode entrant (Spreadsheet + Objets FreeCAD)
+    # --------------------------------------------------------
+    def compute_incoming(self, selected_addrs, alias_map):
+        incoming = set()
+
+        # 1) Spreadsheet
+        for addr in all_cells(self.sheet):
+            formula = self.sheet.getContents(addr)
+            raw = extract_raw_refs(formula)
+            resolved = resolve_refs(self.sheet, raw, alias_map)
+
+            for sel in selected_addrs:
+                for r in resolved:
+                    if r == sel or (r in alias_map and alias_map[r] == sel):
+                        incoming.add((sel, addr))
+                        break
+
+        # 2) Objets FreeCAD
+        obj_refs = find_objects_using_cells(self.sheet, selected_addrs, alias_map)
+        incoming.update(obj_refs)
+
+        return incoming
+
+    # --------------------------------------------------------
+    # Mise en couleur
+    # --------------------------------------------------------
+    def highlight(self, item):
+        text = item.text()
+        target = text.split("→")[1].strip().split(" ")[0]
+
+        # Objet FreeCAD
+        if not re.match(r"^[A-Z]+[0-9]+$", target):
+            Gui.Selection.clearSelection()
+            try:
+                obj_name, prop = target.split(".")
+                Gui.Selection.addSelection(App.ActiveDocument.Name, obj_name)
+            except:
+                pass
+            return
+
+        # Cellule Spreadsheet
+        self.sheet.setBackground(target, (1,1,0,1))
+        App.ActiveDocument.recompute()
+
+# ------------------------------------------------------------
+# Programme principal
+# ------------------------------------------------------------
+try:
+    view = Gui.ActiveDocument.ActiveView
+    sheet = view.getSheet()
+except :
+    sheet=None
+if sheet is None:
+    QtGui.QMessageBox.warning(None, "Erreur",
+                              "Sélectionnez des cellules dans un Spreadsheet.")
+else :
+    dlg = RefDialog(sheet)
+    dlg.show()
