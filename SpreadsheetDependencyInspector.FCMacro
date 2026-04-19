@@ -268,15 +268,27 @@ class RefDialog(QtGui.QDialog):
             alias = self.sheet.getAlias(sel)
             sel_display = f"{sel} ({alias})" if alias else sel
 
-            # Création de l'item
-            item = QtGui.QListWidgetItem(f"{sel_display} → {format_ref(self.sheet, target, alias_map)}")
+            text = f"{sel_display} → {format_ref(self.sheet, target, alias_map)}"
+            item = QtGui.QListWidgetItem(text)
 
-            # Récupération de la formule brute de la cellule concernée
-            formula = self.sheet.getContents(target) if re.match(r"^[A-Z]+[0-9]+$", target) else None
+            # --- Tooltip pour cellules Spreadsheet ---
+            if re.match(r"^[A-Z]+[0-9]+$", target):
+                formula = self.sheet.getContents(target)
+                if formula:
+                    item.setToolTip(formula)
 
-            # Si c'est une cellule Spreadsheet → tooltip = formule
-            if formula:
-                item.setToolTip(formula)
+            # --- Tooltip pour objets FreeCAD ---
+            else:
+                try:
+                    obj_name, prop = target.split(".")
+                    obj = App.ActiveDocument.getObject(obj_name)
+                    if obj and hasattr(obj, "ExpressionEngine"):
+                        for p, expr in obj.ExpressionEngine:
+                            if p == prop:
+                                item.setToolTip(expr)
+                                break
+                except:
+                    pass
 
             self.list.addItem(item)
 
