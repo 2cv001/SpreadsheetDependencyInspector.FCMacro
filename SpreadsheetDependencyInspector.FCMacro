@@ -127,24 +127,40 @@ def canonicalize(ref, alias_map):
 # ------------------------------------------------------------
 # Format d'affichage
 # ------------------------------------------------------------
-def format_ref(sheet, ref, alias_map):
-    if not re.match(r"^[A-Z]+[0-9]+$", ref) and ref not in alias_map and ":" not in ref:
-        return ref
 
+def format_ref(sheet, ref, alias_map):
+
+    # --- Objet FreeCAD : Nom.Propriété (ex : Pad.Length) ---
+    m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\.(.+)", ref)
+    if m:
+        obj_name, prop = m.groups()
+        obj = App.ActiveDocument.getObject(obj_name)
+        if obj:
+            if obj.Label != '':
+                return f"{obj.Label}.{prop}"
+            else:
+                return f"{obj.Name}.{prop}"
+
+    # --- Plage ---
     if ":" in ref:
         return ref
 
+    # --- Cellule A1 ---
     if re.match(r"^[A-Z]+[0-9]+$", ref):
         alias = sheet.getAlias(ref)
         if alias:
             return f"{ref} ({alias})"
         return ref
 
+    # --- Alias ---
     if ref in alias_map:
         addr = alias_map[ref]
         return f"{addr} ({ref})"
 
+    # --- Autre (texte brut) ---
     return ref
+
+
 
 # ------------------------------------------------------------
 # Objets FreeCAD utilisant des cellules
