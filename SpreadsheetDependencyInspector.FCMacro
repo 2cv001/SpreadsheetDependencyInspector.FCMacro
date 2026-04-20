@@ -248,12 +248,28 @@ class RefDialog(QtGui.QDialog):
         app = QtGui.QApplication.instance()
         app.setStyle("Fusion")
         app.setProperty("qt_delay_before_tooltip", 200)
-        palette = app.palette()
-        palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 220))
-        palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(0, 0, 0))
-        app.setPalette(palette)
 
-        # 👉 C’est ICI qu’on charge les réglages (maintenant que les widgets existent)
+        app = QtGui.QApplication.instance()
+
+        # Force un style Qt indépendant du thème Linux
+        QtGui.QApplication.setStyle("Fusion")
+
+        # Palette complète pour les tooltips
+        palette = QtGui.QPalette()
+
+        # Couleur de fond du tooltip
+        palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 180))
+
+        # Couleur du texte du tooltip
+        palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(0, 0, 0))
+
+        # Couleur de fond générale (sinon KDE override)
+        palette.setColor(QtGui.QPalette.Window, QtGui.QColor(240, 240, 240))
+        palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(0, 0, 0))
+
+        QtGui.QApplication.setPalette(palette)
+
+        # C’est ICI qu’on charge les réglages (maintenant que les widgets existent)
         self.load_settings()
 
         self.recompute()
