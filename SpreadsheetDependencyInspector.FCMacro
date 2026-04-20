@@ -1,3 +1,4 @@
+#SpreadsheetDependencyInspector.FCMacro
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtGui, QtCore
@@ -33,6 +34,7 @@ def addr_to_cell(addr):
 def extract_raw_refs(formula):
     formula = str(formula).strip()
 
+    # IMPORTANT : si ce n'est pas une formule → aucune référence
     if not formula.startswith("="):
         return set()
 
@@ -149,6 +151,9 @@ def find_objects_using_cells(sheet, selected_addrs, alias_map):
     sheet_name = sheet.Name
     sheet_label = sheet.Label
 
+    # Deux formes possibles :
+    # datas.xxx
+    # <<datasLabel>>.xxx
     pattern = rf"(?:{re.escape(sheet_name)}|<<{re.escape(sheet_label)}>>)\.([A-Za-z_][A-Za-z0-9_]*)"
 
     for obj in App.ActiveDocument.Objects:
@@ -188,7 +193,7 @@ def all_cells(sheet):
             yield cell_to_addr(c, r)
 
 # ------------------------------------------------------------
-# Boîte de dialogue persistante avec arbre
+# Boîte de dialogue persistante
 # ------------------------------------------------------------
 class RefDialog(QtGui.QDialog):
     def __init__(self, sheet):
@@ -196,33 +201,41 @@ class RefDialog(QtGui.QDialog):
         self.sheet = sheet
 
         self.setWindowTitle("Analyse des références (Spreadsheet + Objets FreeCAD)")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(350)
 
         layout = QtGui.QVBoxLayout()
 
-        self.mode_out = QtGui.QRadioButton("Cellule sélectionnée → Cellules utilisées dans la formule")
-        self.mode_in  = QtGui.QRadioButton("Cellule sélectionnée → Cellules l'utilisant dans leur formule")
-        self.mode_cross = QtGui.QRadioButton("Références croisées complètes")
-
-        self.mode_cross.setChecked(True)
+        self.mode_out = QtGui.QRadioButton("Cellule sélectionnée -> Cellules utilisées dans la formule")
+        self.mode_in = QtGui.QRadioButton("Cellule sélectionnée -> Cellules l'utilisant dans leur formule")
+        self.mode_out.setChecked(True)
 
         self.mode_out.toggled.connect(self.recompute)
         self.mode_in.toggled.connect(self.recompute)
-        self.mode_cross.toggled.connect(self.recompute)
 
         layout.addWidget(self.mode_out)
         layout.addWidget(self.mode_in)
-        layout.addWidget(self.mode_cross)
 
-        self.tree = QtGui.QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.setColumnCount(1)  # ← indispensable en Qt4
-        layout.addWidget(self.tree)
+        self.list = QtGui.QListWidget()
+        layout.addWidget(self.list)
 
-        self.tree.itemClicked.connect(self.highlight)
+        self.list.itemClicked.connect(self.highlight)
 
         self.setLayout(layout)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+
+        app = QtGui.QApplication.instance()
+
+        # Force un style Qt compatible tooltips
+        app.setStyle("Fusion")
+
+        # Force l'activation des tooltips
+        app.setProperty("qt_delay_before_tooltip", 200)
+
+        # Force une couleur lisible (Qt5/Qt6)
+        palette = app.palette()
+        palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 220))
+        palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(0, 0, 0))
+        app.setPalette(palette)
 
         self.recompute()
 
@@ -251,25 +264,47 @@ class RefDialog(QtGui.QDialog):
     # Recalcul selon le mode
     # --------------------------------------------------------
     def recompute(self):
-        self.tree.clear()
+        self.list.clear()
 
         selected_addrs = self.get_current_selection()
-        if not selected_addrs and not self.mode_cross.isChecked():
+        if not selected_addrs:
             return
 
         alias_map = build_alias_map(self.sheet)
 
         if self.mode_out.isChecked():
             refs = self.compute_outgoing(selected_addrs, alias_map)
-            self.display_outgoing(refs, alias_map)
-
-        elif self.mode_in.isChecked():
+        else:
             refs = self.compute_incoming(selected_addrs, alias_map)
-            self.display_incoming(refs, alias_map)
 
-        elif self.mode_cross.isChecked():
-            outgoing, incoming = self.compute_cross_references(alias_map)
-            self.display_cross(outgoing, incoming, alias_map)
+        # refs est un set de tuples (sel, target)
+        for sel, target in sorted(refs):
+            alias = self.sheet.getAlias(sel)
+            sel_display = f"{sel} ({alias})" if alias else sel
+
+            text = f"{sel_display} → {format_ref(self.sheet, target, alias_map)}"
+            item = QtGui.QListWidgetItem(text)
+
+            # --- Tooltip pour cellules Spreadsheet ---
+            if re.match(r"^[A-Z]+[0-9]+$", target):
+                formula = self.sheet.getContents(target)
+                if formula:
+                    item.setToolTip(f"Contenu de {target} : {formula}")
+
+            # --- Tooltip pour objets FreeCAD ---
+            else:
+                try:
+                    obj_name, prop = target.split(".")
+                    obj = App.ActiveDocument.getObject(obj_name)
+                    if obj and hasattr(obj, "ExpressionEngine"):
+                        for p, expr in obj.ExpressionEngine:
+                            if p == prop:
+                                item.setToolTip(f"Expression de {target} : {expr}")
+                                break
+                except:
+                    pass
+
+            self.list.addItem(item)
 
     # --------------------------------------------------------
     # Mode sortant
@@ -283,6 +318,7 @@ class RefDialog(QtGui.QDialog):
             for r in resolved:
                 canon = canonicalize(r, alias_map)
                 refs.add((sel, canon))
+
         return refs
 
     # --------------------------------------------------------
@@ -299,8 +335,7 @@ class RefDialog(QtGui.QDialog):
 
             for sel in selected_addrs:
                 for r in resolved:
-                    canon = canonicalize(r, alias_map)
-                    if canon == sel:
+                    if r == sel or (r in alias_map and alias_map[r] == sel):
                         incoming.add((sel, addr))
                         break
 
@@ -311,164 +346,14 @@ class RefDialog(QtGui.QDialog):
         return incoming
 
     # --------------------------------------------------------
-    # Références croisées complètes
+    # Mise en couleur
     # --------------------------------------------------------
-    def compute_cross_references(self, alias_map):
-        outgoing = {}
-        incoming = {}
-
-        for addr in all_cells(self.sheet):
-            outgoing[addr] = set()
-            incoming[addr] = set()
-
-        # Spreadsheet
-        for addr in all_cells(self.sheet):
-            formula = self.sheet.getContents(addr)
-            raw = extract_raw_refs(formula)
-            resolved = resolve_refs(self.sheet, raw, alias_map)
-
-            for r in resolved:
-                canon = canonicalize(r, alias_map)
-                if canon in outgoing:
-                    outgoing[addr].add(canon)
-                    incoming[canon].add(addr)
-
-        # Objets FreeCAD
-        for addr in all_cells(self.sheet):
-            obj_refs = find_objects_using_cells(self.sheet, [addr], alias_map)
-            for _, target in obj_refs:
-                incoming[addr].add(target)
-
-        return outgoing, incoming
-
-    # --------------------------------------------------------
-    # Affichage mode sortant
-    # --------------------------------------------------------
-    def display_outgoing(self, refs, alias_map):
-        self.tree.clear()
-        by_sel = {}
-        for sel, target in refs:
-            by_sel.setdefault(sel, set()).add(target)
-
-        for sel in sorted(by_sel.keys()):
-            alias = self.sheet.getAlias(sel)
-            title = f"{sel} ({alias})" if alias else sel
-            root = QtGui.QTreeWidgetItem([title])
-            root = QtGui.QTreeWidgetItem(self.tree, [title])
-            root.setExpanded(True)
-
-            for target in sorted(by_sel[sel]):
-                child = QtGui.QTreeWidgetItem([f"→ {format_ref(self.sheet, target, alias_map)}"])
-                self.set_tooltip(child, target)
-                root.addChild(child)
-
-    # --------------------------------------------------------
-    # Affichage mode entrant
-    # --------------------------------------------------------
-    def display_incoming(self, refs, alias_map):
-        self.tree.clear()
-        by_sel = {}
-        for sel, source in refs:
-            by_sel.setdefault(sel, set()).add(source)
-
-        for sel in sorted(by_sel.keys()):
-            alias = self.sheet.getAlias(sel)
-            title = f"{sel} ({alias})" if alias else sel
-
-            # IMPORTANT : créer l’item AVEC parent
-            root = QtGui.QTreeWidgetItem(self.tree, [title])
-            root.setExpanded(True)
-
-            for source in sorted(by_sel[sel]):
-                # IMPORTANT : créer l’item AVEC parent
-                child = QtGui.QTreeWidgetItem(root, [f"← {format_ref(self.sheet, source, alias_map)}"])
-                self.set_tooltip(child, source)
-
-        # Qt4 : fonctionne maintenant
-        self.tree.expandAll()
-
-    # --------------------------------------------------------
-    # Affichage références croisées complètes
-    # --------------------------------------------------------
-    def display_cross(self, outgoing, incoming, alias_map):
-        self.tree.clear()
-
-        for addr in sorted(outgoing.keys()):
-
-            # Ne pas afficher les cellules vides
-            formula = self.sheet.getContents(addr)
-            if not formula or not formula.startswith("="):
-                continue
-
-            alias = self.sheet.getAlias(addr)
-            title = f"{addr} ({alias})" if alias else addr
-
-            # IMPORTANT : créer l’item AVEC parent
-            root = QtGui.QTreeWidgetItem(self.tree, [title])
-            root.setExpanded(True)
-
-            # Sortants
-            if outgoing[addr]:
-                out_node = QtGui.QTreeWidgetItem(root, ["Utilise"])
-                out_node.setExpanded(True)
-
-                for tgt in sorted(outgoing[addr]):
-                    child = QtGui.QTreeWidgetItem(out_node, [format_ref(self.sheet, tgt, alias_map)])
-                    self.set_tooltip(child, tgt)
-
-            # Entrants
-            if incoming[addr]:
-                in_node = QtGui.QTreeWidgetItem(root, ["Utilisée par"])
-                in_node.setExpanded(True)
-
-                for src in sorted(incoming[addr]):
-                    child = QtGui.QTreeWidgetItem(in_node, [format_ref(self.sheet, src, alias_map)])
-                    self.set_tooltip(child, src)
-
-        # Qt4 : fonctionne maintenant
-        self.tree.expandAll()
-
-    # --------------------------------------------------------
-    # Tooltip pour cellule ou objet FreeCAD
-    # --------------------------------------------------------
-    def set_tooltip(self, item, target):
-        # Cellule Spreadsheet
-        if re.match(r"^[A-Z]+[0-9]+$", target):
-            formula = self.sheet.getContents(target)
-            if formula:
-                item.setToolTip(0, f"Contenu de {target} : {formula}")
-
-            return
+    def highlight(self, item):
+        text = item.text()
+        target = text.split("→")[1].strip().split(" ")[0]
 
         # Objet FreeCAD
-        try:
-            obj_name, prop = target.split(".")
-            obj = App.ActiveDocument.getObject(obj_name)
-            if obj and hasattr(obj, "ExpressionEngine"):
-                for p, expr in obj.ExpressionEngine:
-                    if p == prop:
-                        item.setToolTip(0,f"Expression de {target} : {expr}")
-                        return
-        except:
-            pass
-
-    # --------------------------------------------------------
-    # Mise en couleur / sélection
-    # --------------------------------------------------------
-    def highlight(self, item, column):
-        text = item.text(0)
-
-        if "→" in text:
-            part = text.split("→", 1)[1].strip()
-        elif "←" in text:
-            part = text.split("←", 1)[1].strip()
-        else:
-            return
-
-        target = part.split(" ")[0]
-
-        # Objet FreeCAD
-        if "." in target and not re.match(r"^[A-Z]+[0-9]+$", target):
+        if not re.match(r"^[A-Z]+[0-9]+$", target):
             Gui.Selection.clearSelection()
             try:
                 obj_name, prop = target.split(".")
@@ -478,9 +363,8 @@ class RefDialog(QtGui.QDialog):
             return
 
         # Cellule Spreadsheet
-        if re.match(r"^[A-Z]+[0-9]+$", target):
-            self.sheet.setBackground(target, (1,1,0,1))
-            App.ActiveDocument.recompute()
+        self.sheet.setBackground(target, (1,1,0,1))
+        App.ActiveDocument.recompute()
 
 # ------------------------------------------------------------
 # Programme principal
@@ -488,15 +372,11 @@ class RefDialog(QtGui.QDialog):
 try:
     view = Gui.ActiveDocument.ActiveView
     sheet = view.getSheet()
-except:
-    sheet = None
-
+except :
+    sheet=None
 if sheet is None:
     QtGui.QMessageBox.warning(None, "Erreur",
                               "Sélectionnez des cellules dans un Spreadsheet.")
-else:
-    # Délai avant affichage du hint (en ms)
-    QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
-
+else :
     dlg = RefDialog(sheet)
     dlg.show()
