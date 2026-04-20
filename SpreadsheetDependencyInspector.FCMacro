@@ -1,7 +1,26 @@
+
+
+# SpreadsheetDependencyInspector.FCMacro
+
+
+
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtGui, QtCore
 import re
+
+import os, configparser
+from PySide import QtGui, QtCore
+
+# Nom du fichier INI (en dur)
+INI_FILENAME = "SpreadsheetDependencyInspector.ini"
+
+# Chemin complet vers le fichier INI
+MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
+INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
+
+
+
 
 # ------------------------------------------------------------
 # Convertit (col,row) → "A1"
@@ -38,15 +57,12 @@ def extract_raw_refs(formula):
 
     refs = set()
 
-    # Références simples A1, B12, Z99
     for r in re.findall(r"\b[A-Z]+[0-9]+\b", formula):
         refs.add(r)
 
-    # Plages A1:B5
     for r in re.findall(r"\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b", formula):
         refs.add(f"{r[0]}:{r[1]}")
 
-    # Alias (mots alphabétiques)
     for r in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", formula):
         refs.add(r)
 
@@ -77,23 +93,17 @@ def resolve_refs(sheet, refs, alias_map):
     resolved = set()
 
     for r in refs:
-
-        # Plage : on ne résout pas
         if ":" in r:
             resolved.add(r)
             continue
 
-        # Adresse A1
         if re.match(r"^[A-Z]+[0-9]+$", r):
             resolved.add(r)
-
             alias = sheet.getAlias(r)
             if alias:
                 resolved.add(alias)
-
             continue
 
-        # Alias → adresse
         if r in alias_map:
             addr = alias_map[r]
             resolved.add(addr)
@@ -103,7 +113,7 @@ def resolve_refs(sheet, refs, alias_map):
     return resolved
 
 # ------------------------------------------------------------
-# Canonicalisation : on garde UNE seule entrée par cellule
+# Canonicalisation
 # ------------------------------------------------------------
 def canonicalize(ref, alias_map):
     if ":" in ref:
@@ -115,25 +125,21 @@ def canonicalize(ref, alias_map):
     return ref
 
 # ------------------------------------------------------------
-# Format d'affichage : fusion adresse + alias
+# Format d'affichage
 # ------------------------------------------------------------
 def format_ref(sheet, ref, alias_map):
-    # Objet FreeCAD → on l'affiche tel quel
     if not re.match(r"^[A-Z]+[0-9]+$", ref) and ref not in alias_map and ":" not in ref:
         return ref
 
-    # Plage
     if ":" in ref:
         return ref
 
-    # Adresse A1
     if re.match(r"^[A-Z]+[0-9]+$", ref):
         alias = sheet.getAlias(ref)
         if alias:
             return f"{ref} ({alias})"
         return ref
 
-    # Alias → adresse
     if ref in alias_map:
         addr = alias_map[ref]
         return f"{addr} ({ref})"
@@ -141,7 +147,7 @@ def format_ref(sheet, ref, alias_map):
     return ref
 
 # ------------------------------------------------------------
-# Analyse des objets FreeCAD utilisant les cellules sélectionnées
+# Objets FreeCAD utilisant des cellules
 # ------------------------------------------------------------
 def find_objects_using_cells(sheet, selected_addrs, alias_map):
     used = set()
@@ -176,7 +182,7 @@ def find_objects_using_cells(sheet, selected_addrs, alias_map):
     return used
 
 # ------------------------------------------------------------
-# Récupère toutes les adresses utilisées du spreadsheet
+# Toutes les cellules utilisées
 # ------------------------------------------------------------
 def all_cells(sheet):
     start, end = sheet.getUsedRange()
@@ -188,10 +194,12 @@ def all_cells(sheet):
             yield cell_to_addr(c, r)
 
 # ------------------------------------------------------------
-# Boîte de dialogue persistante avec arbre
+# Boîte de dialogue
 # ------------------------------------------------------------
 class RefDialog(QtGui.QDialog):
+
     def __init__(self, sheet):
+
         super(RefDialog, self).__init__()
         self.sheet = sheet
 
@@ -200,8 +208,9 @@ class RefDialog(QtGui.QDialog):
 
         layout = QtGui.QVBoxLayout()
 
+        # Modes
         self.mode_out = QtGui.QRadioButton("Cellule sélectionnée → Cellules utilisées dans la formule")
-        self.mode_in  = QtGui.QRadioButton("Cellule sélectionnée → Cellules l'utilisant dans leur formule")
+        self.mode_in = QtGui.QRadioButton("Cellule sélectionnée → Cellules l'utilisant dans leur formule")
         self.mode_cross = QtGui.QRadioButton("Références croisées complètes")
 
         self.mode_cross.setChecked(True)
@@ -214,9 +223,20 @@ class RefDialog(QtGui.QDialog):
         layout.addWidget(self.mode_in)
         layout.addWidget(self.mode_cross)
 
+        # Cases à cocher
+        self.show_formula = QtGui.QCheckBox("Afficher la formule dans la ligne")
+        self.show_value = QtGui.QCheckBox("Afficher la valeur dans la ligne")
+
+        self.show_formula.stateChanged.connect(self.recompute)
+        self.show_value.stateChanged.connect(self.recompute)
+
+        layout.addWidget(self.show_formula)
+        layout.addWidget(self.show_value)
+
+        # Arbre
         self.tree = QtGui.QTreeWidget()
         self.tree.setHeaderHidden(True)
-        self.tree.setColumnCount(1)  # ← indispensable en Qt4
+        self.tree.setColumnCount(1)
         layout.addWidget(self.tree)
 
         self.tree.itemClicked.connect(self.highlight)
@@ -224,10 +244,184 @@ class RefDialog(QtGui.QDialog):
         self.setLayout(layout)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
 
+        # Tooltips compatibles Qt4/Qt5
+        app = QtGui.QApplication.instance()
+        app.setStyle("Fusion")
+        app.setProperty("qt_delay_before_tooltip", 200)
+        palette = app.palette()
+        palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 220))
+        palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(0, 0, 0))
+        app.setPalette(palette)
+
+        # 👉 C’est ICI qu’on charge les réglages (maintenant que les widgets existent)
+        self.load_settings()
+
         self.recompute()
 
+    def load_settings(self):
+        if not os.path.exists(INI_PATH):
+            return
+
+        config = configparser.ConfigParser()
+        config.read(INI_PATH, encoding="utf-8")
+        ui = config["UI"]
+
+        # --- Mode radio ---
+        mode = ui.getint("mode", 3)
+        self.mode_out.setChecked(mode == 1)
+        self.mode_in.setChecked(mode == 2)
+        self.mode_cross.setChecked(mode == 3)
+
+        # --- Cases à cocher ---
+        self.show_formula.setChecked(ui.getboolean("show_formula", False))
+        self.show_value.setChecked(ui.getboolean("show_value", False))
+
+        # --- Taille ---
+        w = ui.getint("width", 600)
+        h = ui.getint("height", 400)
+        self.resize(w, h)
+
+        # --- Position ---
+        x = ui.getint("pos_x", 100)
+        y = ui.getint("pos_y", 100)
+
+        screen = QtGui.QApplication.primaryScreen().availableGeometry()
+
+        if x < screen.left(): x = screen.left() + 50
+        if x + w > screen.right(): x = screen.right() - w - 50
+        if y < screen.top(): y = screen.top() + 50
+        if y + h > screen.bottom(): y = screen.bottom() - h - 50
+
+        self.move(x, y)
+
+    def save_settings(self):
+        config = configparser.ConfigParser()
+        config["UI"] = {}
+
+        # --- Mode radio ---
+        if self.mode_out.isChecked():
+            mode = 1
+        elif self.mode_in.isChecked():
+            mode = 2
+        else:
+            mode = 3
+        config["UI"]["mode"] = str(mode)
+
+        # --- Cases à cocher ---
+        config["UI"]["show_formula"] = str(self.show_formula.isChecked())
+        config["UI"]["show_value"] = str(self.show_value.isChecked())
+
+        # --- Taille ---
+        size = self.size()
+        config["UI"]["width"] = str(size.width())
+        config["UI"]["height"] = str(size.height())
+
+        # --- Position ---
+        pos = self.pos()
+        config["UI"]["pos_x"] = str(pos.x())
+        config["UI"]["pos_y"] = str(pos.y())
+
+        with open(INI_PATH, "w", encoding="utf-8") as f:
+            config.write(f)
+
     # --------------------------------------------------------
-    # Relit la sélection actuelle dans le Spreadsheet
+    # Enrichissement du texte
+    # --------------------------------------------------------
+
+    def enrich_label(self, addr, base_text):
+
+        # Si aucune case cochée → texte normal
+        if not self.show_formula.isChecked() and not self.show_value.isChecked():
+            return base_text
+
+        # --------------------------------------------------------
+        # Cas spécial : Sketch.Constraints[n]
+        # --------------------------------------------------------
+        m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\.Constraints\[(\d+)\]", addr)
+        if m:
+            obj_name, idx = m.groups()
+            obj = App.ActiveDocument.getObject(obj_name)
+
+            parts = [base_text]
+
+            # Formule (expression)
+            if self.show_formula.isChecked() and hasattr(obj, "ExpressionEngine"):
+                for p, expr in obj.ExpressionEngine:
+                    if p == f"Constraints[{idx}]":
+                        parts.append(f"expression : {expr}")
+                        break
+
+            # Valeur
+            if self.show_value.isChecked():
+                try:
+                    c = obj.Constraints[int(idx)]
+                    val = getattr(c, "Value", None)
+                    if val is not None:
+                        parts.append(f"valeur : {val}")
+                except:
+                    pass
+
+            return " — ".join(parts)
+
+        # --------------------------------------------------------
+        # Objet FreeCAD classique : Pad.Length, Pocket.Depth, etc.
+        # --------------------------------------------------------
+        if "." in addr and not re.match(r"^[A-Z]+[0-9]+$", addr):
+            try:
+                obj_name, prop = addr.split(".")
+                obj = App.ActiveDocument.getObject(obj_name)
+
+                if obj and hasattr(obj, "ExpressionEngine"):
+                    parts = [base_text]
+
+                    # Formule
+                    if self.show_formula.isChecked():
+                        for p, expr in obj.ExpressionEngine:
+                            if p == prop:
+                                parts.append(f"expression : {expr}")
+                                break
+
+                    # Valeur
+                    if self.show_value.isChecked():
+                        try:
+                            val = getattr(obj, prop)
+                            parts.append(f"valeur : {val}")
+                        except:
+                            pass
+
+                    return " — ".join(parts)
+
+            except:
+                pass
+
+            return base_text
+
+        # --------------------------------------------------------
+        # Cellule Spreadsheet A1
+        # --------------------------------------------------------
+        parts = [base_text]
+
+        # Formule
+        if self.show_formula.isChecked():
+            try:
+                formula = self.sheet.getContents(addr)
+                if formula:
+                    parts.append(f"contenu : {formula}")
+            except:
+                pass
+
+        # Valeur
+        if self.show_value.isChecked():
+            try:
+                val = self.sheet.get(addr)
+                parts.append(f"valeur : {val}")
+            except:
+                pass
+
+        return " — ".join(parts)
+
+    # --------------------------------------------------------
+    # Sélection actuelle
     # --------------------------------------------------------
     def get_current_selection(self):
         sel = self.sheet.ViewObject.getView().selectedCells()
@@ -248,7 +442,7 @@ class RefDialog(QtGui.QDialog):
         return addrs
 
     # --------------------------------------------------------
-    # Recalcul selon le mode
+    # Recompute
     # --------------------------------------------------------
     def recompute(self):
         self.tree.clear()
@@ -286,12 +480,11 @@ class RefDialog(QtGui.QDialog):
         return refs
 
     # --------------------------------------------------------
-    # Mode entrant (Spreadsheet + Objets FreeCAD)
+    # Mode entrant
     # --------------------------------------------------------
     def compute_incoming(self, selected_addrs, alias_map):
         incoming = set()
 
-        # 1) Spreadsheet
         for addr in all_cells(self.sheet):
             formula = self.sheet.getContents(addr)
             raw = extract_raw_refs(formula)
@@ -304,14 +497,13 @@ class RefDialog(QtGui.QDialog):
                         incoming.add((sel, addr))
                         break
 
-        # 2) Objets FreeCAD
         obj_refs = find_objects_using_cells(self.sheet, selected_addrs, alias_map)
         incoming.update(obj_refs)
 
         return incoming
 
     # --------------------------------------------------------
-    # Références croisées complètes
+    # Références croisées
     # --------------------------------------------------------
     def compute_cross_references(self, alias_map):
         outgoing = {}
@@ -321,7 +513,6 @@ class RefDialog(QtGui.QDialog):
             outgoing[addr] = set()
             incoming[addr] = set()
 
-        # Spreadsheet
         for addr in all_cells(self.sheet):
             formula = self.sheet.getContents(addr)
             raw = extract_raw_refs(formula)
@@ -333,7 +524,6 @@ class RefDialog(QtGui.QDialog):
                     outgoing[addr].add(canon)
                     incoming[canon].add(addr)
 
-        # Objets FreeCAD
         for addr in all_cells(self.sheet):
             obj_refs = find_objects_using_cells(self.sheet, [addr], alias_map)
             for _, target in obj_refs:
@@ -342,7 +532,7 @@ class RefDialog(QtGui.QDialog):
         return outgoing, incoming
 
     # --------------------------------------------------------
-    # Affichage mode sortant
+    # Affichage sortant
     # --------------------------------------------------------
     def display_outgoing(self, refs, alias_map):
         self.tree.clear()
@@ -353,17 +543,20 @@ class RefDialog(QtGui.QDialog):
         for sel in sorted(by_sel.keys()):
             alias = self.sheet.getAlias(sel)
             title = f"{sel} ({alias})" if alias else sel
-            root = QtGui.QTreeWidgetItem([title])
+
             root = QtGui.QTreeWidgetItem(self.tree, [title])
             root.setExpanded(True)
 
             for target in sorted(by_sel[sel]):
-                child = QtGui.QTreeWidgetItem([f"→ {format_ref(self.sheet, target, alias_map)}"])
+                label = f"→ {format_ref(self.sheet, target, alias_map)}"
+                label = self.enrich_label(target, label)
+                child = QtGui.QTreeWidgetItem(root, [label])
                 self.set_tooltip(child, target)
-                root.addChild(child)
+
+        self.tree.expandAll()
 
     # --------------------------------------------------------
-    # Affichage mode entrant
+    # Affichage entrant
     # --------------------------------------------------------
     def display_incoming(self, refs, alias_map):
         self.tree.clear()
@@ -375,85 +568,83 @@ class RefDialog(QtGui.QDialog):
             alias = self.sheet.getAlias(sel)
             title = f"{sel} ({alias})" if alias else sel
 
-            # IMPORTANT : créer l’item AVEC parent
             root = QtGui.QTreeWidgetItem(self.tree, [title])
             root.setExpanded(True)
 
             for source in sorted(by_sel[sel]):
-                # IMPORTANT : créer l’item AVEC parent
-                child = QtGui.QTreeWidgetItem(root, [f"← {format_ref(self.sheet, source, alias_map)}"])
+                label = f"← {format_ref(self.sheet, source, alias_map)}"
+                label = self.enrich_label(source, label)
+                child = QtGui.QTreeWidgetItem(root, [label])
                 self.set_tooltip(child, source)
 
-        # Qt4 : fonctionne maintenant
         self.tree.expandAll()
 
     # --------------------------------------------------------
-    # Affichage références croisées complètes
+    # Affichage croisé
     # --------------------------------------------------------
     def display_cross(self, outgoing, incoming, alias_map):
         self.tree.clear()
 
         for addr in sorted(outgoing.keys()):
-
-            # Ne pas afficher les cellules vides
             formula = self.sheet.getContents(addr)
-            if not formula or not formula.startswith("="):
+
+            # On masque seulement les cellules totalement isolées
+            if (not formula or not formula.startswith("=")) \
+                    and not outgoing[addr] \
+                    and not incoming[addr]:
                 continue
 
             alias = self.sheet.getAlias(addr)
             title = f"{addr} ({alias})" if alias else addr
 
-            # IMPORTANT : créer l’item AVEC parent
             root = QtGui.QTreeWidgetItem(self.tree, [title])
             root.setExpanded(True)
 
-            # Sortants
             if outgoing[addr]:
                 out_node = QtGui.QTreeWidgetItem(root, ["Utilise"])
                 out_node.setExpanded(True)
 
                 for tgt in sorted(outgoing[addr]):
-                    child = QtGui.QTreeWidgetItem(out_node, [format_ref(self.sheet, tgt, alias_map)])
+                    label = format_ref(self.sheet, tgt, alias_map)
+                    label = self.enrich_label(tgt, label)
+                    child = QtGui.QTreeWidgetItem(out_node, [label])
                     self.set_tooltip(child, tgt)
 
-            # Entrants
             if incoming[addr]:
                 in_node = QtGui.QTreeWidgetItem(root, ["Utilisée par"])
                 in_node.setExpanded(True)
 
                 for src in sorted(incoming[addr]):
-                    child = QtGui.QTreeWidgetItem(in_node, [format_ref(self.sheet, src, alias_map)])
+                    label = format_ref(self.sheet, src, alias_map)
+                    label = self.enrich_label(src, label)
+                    child = QtGui.QTreeWidgetItem(in_node, [label])
                     self.set_tooltip(child, src)
 
-        # Qt4 : fonctionne maintenant
         self.tree.expandAll()
 
     # --------------------------------------------------------
-    # Tooltip pour cellule ou objet FreeCAD
+    # Tooltip
     # --------------------------------------------------------
     def set_tooltip(self, item, target):
-        # Cellule Spreadsheet
         if re.match(r"^[A-Z]+[0-9]+$", target):
             formula = self.sheet.getContents(target)
             if formula:
                 item.setToolTip(0, f"Contenu de {target} : {formula}")
-
             return
 
-        # Objet FreeCAD
         try:
             obj_name, prop = target.split(".")
             obj = App.ActiveDocument.getObject(obj_name)
             if obj and hasattr(obj, "ExpressionEngine"):
                 for p, expr in obj.ExpressionEngine:
                     if p == prop:
-                        item.setToolTip(0,f"Expression de {target} : {expr}")
+                        item.setToolTip(0, f"Expression de {target} : {expr}")
                         return
         except:
             pass
 
     # --------------------------------------------------------
-    # Mise en couleur / sélection
+    # Highlight
     # --------------------------------------------------------
     def highlight(self, item, column):
         text = item.text(0)
@@ -467,7 +658,6 @@ class RefDialog(QtGui.QDialog):
 
         target = part.split(" ")[0]
 
-        # Objet FreeCAD
         if "." in target and not re.match(r"^[A-Z]+[0-9]+$", target):
             Gui.Selection.clearSelection()
             try:
@@ -477,10 +667,15 @@ class RefDialog(QtGui.QDialog):
                 pass
             return
 
-        # Cellule Spreadsheet
         if re.match(r"^[A-Z]+[0-9]+$", target):
             self.sheet.setBackground(target, (1,1,0,1))
             App.ActiveDocument.recompute()
+
+
+    def closeEvent(self, event):
+        self.save_settings()
+        super().closeEvent(event)
+
 
 # ------------------------------------------------------------
 # Programme principal
@@ -495,8 +690,6 @@ if sheet is None:
     QtGui.QMessageBox.warning(None, "Erreur",
                               "Sélectionnez des cellules dans un Spreadsheet.")
 else:
-    # Délai avant affichage du hint (en ms)
     QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
-
     dlg = RefDialog(sheet)
     dlg.show()
