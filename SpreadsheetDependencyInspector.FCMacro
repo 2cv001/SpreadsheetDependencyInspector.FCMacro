@@ -128,7 +128,8 @@ def canonicalize(ref, alias_map):
 # Format d'affichage
 # ------------------------------------------------------------
 
-def format_ref(sheet, ref, alias_map):
+
+def format_ref(sheet, ref, alias_map, current_addr):
 
     # --- Objet FreeCAD : Nom.Propriété (ex : Pad.Length) ---
     m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\.(.+)", ref)
@@ -136,16 +137,34 @@ def format_ref(sheet, ref, alias_map):
         obj_name, prop = m.groups()
         obj = App.ActiveDocument.getObject(obj_name)
         if obj:
-            if obj.Label != '':
-                return f"{obj.Label}.{prop}"
-            else:
-                return f"{obj.Name}.{prop}"
+            display_name = obj.Label if obj.Label else obj.Name
+            return f"{display_name}.{prop}"
+
+    # --- Référence inter-spreadsheet explicite : Feuille.A1 ou Feuille.Alias ---
+    m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$", ref)
+    if m:
+        sheet_name, key = m.groups()
+        other = App.ActiveDocument.getObject(sheet_name)
+        if other and other.TypeId == "Spreadsheet::Sheet":
+            display_name = other.Label if other.Label else other.Name
+            return f"{display_name}.{key}"
 
     # --- Plage ---
     if ":" in ref:
         return ref
 
-    # --- Cellule A1 ---
+    # --- Référence externe implicite : B4 mais précédé de Feuille.B4 dans la formule ---
+    if re.match(r"^[A-Z]+[0-9]+$", ref):
+        formula = sheet.getContents(current_addr)
+        m = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\." + ref + r"\b", formula)
+        if m:
+            sheet_name = m.group(1)
+            other = App.ActiveDocument.getObject(sheet_name)
+            if other and other.TypeId == "Spreadsheet::Sheet":
+                display_name = other.Label if other.Label else other.Name
+                return f"{display_name}.{ref}"
+
+    # --- Cellule A1 locale ---
     if re.match(r"^[A-Z]+[0-9]+$", ref):
         alias = sheet.getAlias(ref)
         if alias:
@@ -157,7 +176,7 @@ def format_ref(sheet, ref, alias_map):
         addr = alias_map[ref]
         return f"{addr} ({ref})"
 
-    # --- Autre (texte brut) ---
+    # --- Autre ---
     return ref
 
 
@@ -580,7 +599,8 @@ class RefDialog(QtGui.QDialog):
             root.setExpanded(True)
 
             for target in sorted(by_sel[sel]):
-                label = f"→ {format_ref(self.sheet, target, alias_map)}"
+                # ICI : on passe sel comme adresse courante
+                label = f"→ {format_ref(self.sheet, target, alias_map, sel)}"
                 label = self.enrich_label(target, label)
                 child = QtGui.QTreeWidgetItem(root, [label])
                 self.set_tooltip(child, target)
@@ -604,7 +624,8 @@ class RefDialog(QtGui.QDialog):
             root.setExpanded(True)
 
             for source in sorted(by_sel[sel]):
-                label = f"← {format_ref(self.sheet, source, alias_map)}"
+                # ICI : on passe sel comme adresse courante
+                label = f"← {format_ref(self.sheet, source, alias_map, sel)}"
                 label = self.enrich_label(source, label)
                 child = QtGui.QTreeWidgetItem(root, [label])
                 self.set_tooltip(child, source)
@@ -637,7 +658,7 @@ class RefDialog(QtGui.QDialog):
                 out_node.setExpanded(True)
 
                 for tgt in sorted(outgoing[addr]):
-                    label = format_ref(self.sheet, tgt, alias_map)
+                    label = format_ref(self.sheet, tgt, alias_map, addr)
                     label = self.enrich_label(tgt, label)
                     child = QtGui.QTreeWidgetItem(out_node, [label])
                     self.set_tooltip(child, tgt)
@@ -647,7 +668,8 @@ class RefDialog(QtGui.QDialog):
                 in_node.setExpanded(True)
 
                 for src in sorted(incoming[addr]):
-                    label = format_ref(self.sheet, src, alias_map)
+                    label = format_ref(self.sheet, src, alias_map, addr)
+
                     label = self.enrich_label(src, label)
                     child = QtGui.QTreeWidgetItem(in_node, [label])
                     self.set_tooltip(child, src)
