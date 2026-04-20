@@ -514,7 +514,12 @@ class RefDialog(QtGui.QDialog):
 
         elif self.mode_cross.isChecked():
             outgoing, incoming = self.compute_cross_references(alias_map)
-            self.display_cross(outgoing, incoming, alias_map)
+
+            # Mode références croisées : uniquement les cellules sélectionnées
+            subset_out = {addr: outgoing.get(addr, set()) for addr in selected_addrs}
+            subset_in = {addr: incoming.get(addr, set()) for addr in selected_addrs}
+
+            self.display_cross(subset_out, subset_in, alias_map)
 
     # --------------------------------------------------------
     # Mode sortant
