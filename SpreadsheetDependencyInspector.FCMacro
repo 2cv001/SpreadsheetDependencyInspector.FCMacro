@@ -356,7 +356,6 @@ class RefDialog(QtGui.QDialog):
 
         self.recompute()
 
-
     def load_settings(self):
         if not os.path.exists(INI_PATH):
             return
@@ -380,16 +379,39 @@ class RefDialog(QtGui.QDialog):
         h = ui.getint("height", 400)
         self.resize(w, h)
 
-        # --- Position ---
+        # --- Position sauvegardée ---
         x = ui.getint("pos_x", 100)
         y = ui.getint("pos_y", 100)
 
-        screen = QtGui.QApplication.primaryScreen().availableGeometry()
+        # --- Écran sauvegardé ---
+        saved_screen = ui.get("screen_name", None)
 
-        if x < screen.left(): x = screen.left() + 50
-        if x + w > screen.right(): x = screen.right() - w - 50
-        if y < screen.top(): y = screen.top() + 50
-        if y + h > screen.bottom(): y = screen.bottom() - h - 50
+        # Liste des écrans disponibles
+        screens = QtGui.QApplication.screens()
+
+        # Trouver l'écran correspondant
+        target_screen = None
+        if saved_screen:
+            for s in screens:
+                if s.name() == saved_screen:
+                    target_screen = s
+                    break
+
+        # Si l'écran n'existe plus → fallback sur l'écran principal
+        if not target_screen:
+            target_screen = QtGui.QApplication.primaryScreen()
+
+        # Géométrie de l'écran choisi
+        geo = target_screen.availableGeometry()
+
+        # Vérifier si la position sauvegardée est visible sur cet écran
+        rect = QtCore.QRect(x, y, w, h)
+
+        if not geo.contains(rect.center()):
+            # Recentrer proprement
+            cx = geo.center().x() - w // 2
+            cy = geo.center().y() - h // 2
+            x, y = cx, cy
 
         self.move(x, y)
 
@@ -419,6 +441,14 @@ class RefDialog(QtGui.QDialog):
         pos = self.pos()
         config["UI"]["pos_x"] = str(pos.x())
         config["UI"]["pos_y"] = str(pos.y())
+
+        # --- Écran actuel ---
+        try:
+            screen = self.screen()  # Qt5
+            if screen:
+                config["UI"]["screen_name"] = screen.name()
+        except:
+            pass
 
         with open(INI_PATH, "w", encoding="utf-8") as f:
             config.write(f)
