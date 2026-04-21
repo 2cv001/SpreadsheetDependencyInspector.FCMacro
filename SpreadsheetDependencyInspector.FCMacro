@@ -23,6 +23,10 @@ INI_FILENAME = "SpreadsheetDependencyInspector.ini"
 # Chemin complet vers le fichier INI
 MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
 INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
+DEBUG = False
+
+
+
 
 def iter_cells_from_xml(sh):
     xml_text = sh.cells.Content
@@ -33,7 +37,6 @@ def iter_cells_from_xml(sh):
         content = cell.get("content", "")
         alias = cell.get("alias", None)
         yield addr, content, alias
-
 
 
 def iter_cells_from_xml(sh):
@@ -257,7 +260,39 @@ def all_cells(sheet):
 # ------------------------------------------------------------
 class RefDialog(QtGui.QDialog):
 
+    def add_outgoing_recursive(self, parent, cell, outgoing_refs, alias_map, visited, depth=0):
+        if cell in visited:
+            return
+        visited.add(cell)
+
+        for target in sorted(outgoing_refs.get(cell, [])):
+            label = f"→ {format_ref(self.sheet, target, alias_map, cell)}"
+            label = self.enrich_label(target, label)
+
+            child = QtGui.QTreeWidgetItem(parent, [label])
+            self.set_tooltip(child, target)
+
+            # IMPORTANT : ne jamais ouvrir ici
+            child.setExpanded(False)
+
+            # récursion (UNE SEULE FOIS)
+            self.add_outgoing_recursive(child, target, outgoing_refs, alias_map, visited, depth + 1)
+
+    def add_incoming_recursive(self, parent, cell, incoming_refs, alias_map, visited, depth=0):
+        if cell in visited:
+            return
+        visited.add(cell)
+        for source in sorted(incoming_refs.get(cell, [])):
+            label = f"← {format_ref(self.sheet, source, alias_map, cell)}"
+            label = self.enrich_label(source, label)
+            child = QtGui.QTreeWidgetItem(parent, [label])
+            self.set_tooltip(child, source)
+            child.setExpanded(depth == 0)
+            self.add_incoming_recursive(child, source, incoming_refs, alias_map, visited, depth + 1)
+
     def __init__(self, sheet):
+
+        if DEBUG: print(">>> INIT CALLED")
 
         super(RefDialog, self).__init__()
         self.sheet = sheet
@@ -276,44 +311,27 @@ class RefDialog(QtGui.QDialog):
         self.mode_cross = QtGui.QRadioButton("Références croisées complètes")
         self.mode_cross.setChecked(True)
 
-        self.mode_out.toggled.connect(self.recompute)
-        self.mode_in.toggled.connect(self.recompute)
-        self.mode_cross.toggled.connect(self.recompute)
-
         modes_box.addWidget(self.mode_out)
         modes_box.addWidget(self.mode_in)
         modes_box.addWidget(self.mode_cross)
 
-
         self.btn_refresh = QtGui.QPushButton()
         self.btn_refresh.setMaximumWidth(32)
-
         icon = QtGui.QApplication.style().standardIcon(QtGui.QStyle.SP_BrowserReload)
         self.btn_refresh.setIcon(icon)
-
-        self.btn_refresh.setToolTip("Mettre à jour")  # ← HINT ajouté
-
-        self.btn_refresh.clicked.connect(self.recompute)
+        self.btn_refresh.setToolTip("Mettre à jour")
 
         top_line.addLayout(modes_box)
         top_line.addWidget(self.btn_refresh)
-
         layout.addLayout(top_line)
 
         # --- Ligne des cases à cocher ---
         checks_line = QtGui.QHBoxLayout()
-
         self.show_formula = QtGui.QCheckBox("Afficher la formule dans la ligne")
         self.show_value = QtGui.QCheckBox("Afficher la valeur dans la ligne")
-
-        self.show_formula.stateChanged.connect(self.recompute)
-        self.show_value.stateChanged.connect(self.recompute)
-
         checks_line.addWidget(self.show_formula)
         checks_line.addWidget(self.show_value)
-
         layout.addLayout(checks_line)
-
 
         # Arbre
         self.tree = QtGui.QTreeWidget()
@@ -326,35 +344,34 @@ class RefDialog(QtGui.QDialog):
         self.setLayout(layout)
         self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
 
-        # Tooltips compatibles Qt4/Qt5
+        # Tooltips, palette, etc.
         app = QtGui.QApplication.instance()
         app.setStyle("Fusion")
         app.setProperty("qt_delay_before_tooltip", 200)
-
-        app = QtGui.QApplication.instance()
-
-        # Force un style Qt indépendant du thème Linux
         QtGui.QApplication.setStyle("Fusion")
 
-        # Palette complète pour les tooltips
         palette = QtGui.QPalette()
-
-        # Couleur de fond du tooltip
         palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 180))
-
-        # Couleur du texte du tooltip
         palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(0, 0, 0))
-
-        # Couleur de fond générale (sinon KDE override)
         palette.setColor(QtGui.QPalette.Window, QtGui.QColor(240, 240, 240))
         palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(0, 0, 0))
-
         QtGui.QApplication.setPalette(palette)
 
-        # C’est ICI qu’on charge les réglages (maintenant que les widgets existent)
+        # Charger les réglages
         self.load_settings()
 
+        # 🔥 1) Faire un seul recompute initial
         self.recompute()
+
+        # 🔥 2) Connecter les signaux APRÈS le premier recompute
+        self.mode_out.toggled.connect(self.recompute)
+        self.mode_in.toggled.connect(self.recompute)
+        self.mode_cross.toggled.connect(self.recompute)
+
+        self.btn_refresh.clicked.connect(self.recompute)
+
+        self.show_formula.stateChanged.connect(self.recompute)
+        self.show_value.stateChanged.connect(self.recompute)
 
     def load_settings(self):
         if not os.path.exists(INI_PATH):
@@ -559,43 +576,52 @@ class RefDialog(QtGui.QDialog):
         if hasattr(view, "getSheet"):
             self.sheet = view.getSheet()
 
-        # 🔍 PRINT 1 — quelle feuille FreeCAD croit active
-        print("=== get_current_selection ===")
-        print("self.sheet =", self.sheet)
-        print("self.sheet.Name =", self.sheet.Name)
-        print("self.sheet.Label =", self.sheet.Label)
+        if DEBUG: print("=== get_current_selection ===")
+        if DEBUG: print("self.sheet =", self.sheet)
+        if DEBUG: print("self.sheet.Name =", self.sheet.Name)
+        if DEBUG: print("self.sheet.Label =", self.sheet.Label)
 
         sel = self.sheet.ViewObject.getView().selectedCells()
-
-        # 🔍 PRINT 2 — ce que renvoie selectedCells()
-        print("selectedCells() raw =", sel)
+        if DEBUG: print("selectedCells() raw =", sel)
 
         addrs = []
 
         for item in sel:
+
+            # 🔥 Cas 1 — FreeCAD renvoie une chaîne : "D8", "D10", "D11", ...
+            if isinstance(item, str):
+                if DEBUG: print("→ addr str =", item)
+                addrs.append(item)
+                continue
+
+            # Cas 2 — FreeCAD renvoie (col, row)
             if len(item) == 2 and isinstance(item[0], int):
                 col, row = item
                 addr = cell_to_addr(col, row)
-                print("→ addr int =", addr)
+                if DEBUG: print("→ addr int =", addr)
                 addrs.append(addr)
+                continue
 
-            elif len(item) == 2 and isinstance(item[0], str):
+            # Cas 3 — FreeCAD renvoie ('D', 10)
+            if len(item) == 2 and isinstance(item[0], str):
                 addr = f"{item[0]}{item[1]}"
-                print("→ addr str =", addr)
+                if DEBUG: print("→ addr str2 =", addr)
                 addrs.append(addr)
+                continue
 
-            elif len(item) == 4:
+            # Cas 4 — FreeCAD renvoie un range (col1, row1, col2, row2)
+            if len(item) == 4:
                 col1, row1, col2, row2 = item
-                print("→ range:", item)
+                if DEBUG: print("→ range:", item)
                 for c in range(col1, col2 + 1):
                     for r in range(row1, row2 + 1):
                         addr = cell_to_addr(c, r)
-                        print("   → addr range =", addr)
+                        if DEBUG: print("   → addr range =", addr)
                         addrs.append(addr)
+                continue
 
-        # 🔍 PRINT 3 — résultat final
-        print("addrs final =", addrs)
-        print("============================")
+        if DEBUG: print("addrs final =", addrs)
+        if DEBUG: print("============================")
 
         return addrs
 
@@ -603,60 +629,72 @@ class RefDialog(QtGui.QDialog):
     # Recompute
     # --------------------------------------------------------
     def recompute(self):
-        print("OUT :", self.mode_out.isChecked())
-        print("IN  :", self.mode_in.isChecked())
-        print("CROSS:", self.mode_cross.isChecked())
+        if DEBUG: print(">>> RECOMPUTE CALLED")
 
         self.tree.clear()
 
-        # 🔍 PRINT 1 — ce que renvoie get_current_selection()
-        print("=== DEBUG SELECTION ===")
         selected_addrs = self.get_current_selection()
-        print("selected_addrs =", selected_addrs)
 
-        # 🔍 PRINT 2 — si tu veux savoir quel objet FreeCAD est sélectionné
         sel = Gui.Selection.getSelection()
-        print("Gui.Selection =", sel)
+
         if sel:
             obj = sel[0]
-            print("Obj.TypeId =", obj.TypeId)
-            print("Obj.Name   =", obj.Name)
-            print("Obj.Label  =", obj.Label)
+
 
         if not selected_addrs and not self.mode_cross.isChecked():
-            print("=== STOP: aucune sélection et pas en mode cross ===")
+
             return
 
         alias_map = build_alias_map(self.sheet)
 
-        # 🔍 PRINT 3 — alias map
-        print("alias_map =", alias_map)
 
         if self.mode_out.isChecked():
             refs = self.compute_outgoing(selected_addrs, alias_map)
-            print("=== OUTGOING ===")
-            print("refs =", refs)
-            self.display_outgoing(refs, alias_map)
+
+            # Map complète pour la récursion
+            outgoing_all, _ = self.compute_cross_references(alias_map)
+
+            # Normalisation : enlever le préfixe "datas."
+            outgoing_norm = {}
+            for key, targets in outgoing_all.items():
+                simple_key = key.split(".")[-1]
+                outgoing_norm[simple_key] = {t.split(".")[-1] for t in targets}
+
+            # ✔️ Correction ici : self, pas sself
+            self.display_outgoing(refs, alias_map, outgoing_norm)
+
 
         elif self.mode_in.isChecked():
             refs = self.compute_incoming(selected_addrs, alias_map)
-            print("=== INCOMING ===")
-            print("refs =", refs)
+            if DEBUG: print("=== INCOMING ===")
+            if DEBUG: print("refs =", refs)
             self.display_incoming(refs, alias_map)
 
         elif self.mode_cross.isChecked():
             outgoing, incoming = self.compute_cross_references(alias_map)
 
-            print("=== CROSS RAW ===")
-            print("outgoing =", outgoing)
-            print("incoming =", incoming)
+            if DEBUG: print("=== CROSS RAW ===")
+            if DEBUG: print("outgoing =", outgoing)
+            if DEBUG: print("incoming =", incoming)
 
-            subset_out = {addr: outgoing.get(addr, set()) for addr in selected_addrs}
-            subset_in = {addr: incoming.get(addr, set()) for addr in selected_addrs}
+            # 🔥 Normalisation : enlever le préfixe "datas." ou "Sheet."
+            outgoing_simple = {
+                k.split(".")[-1]: {t.split(".")[-1] for t in v}
+                for k, v in outgoing.items()
+            }
 
-            print("=== CROSS FILTERED ===")
-            print("subset_out =", subset_out)
-            print("subset_in  =", subset_in)
+            incoming_simple = {
+                k.split(".")[-1]: {t.split(".")[-1] for t in v}
+                for k, v in incoming.items()
+            }
+
+            # 🔥 Filtrage basé sur les adresses simples (D11, D12, D13…)
+            subset_out = {addr: outgoing_simple.get(addr, set()) for addr in selected_addrs}
+            subset_in = {addr: incoming_simple.get(addr, set()) for addr in selected_addrs}
+
+            if DEBUG: print("=== CROSS FILTERED ===")
+            if DEBUG: print("subset_out =", subset_out)
+            if DEBUG: print("subset_in  =", subset_in)
 
             self.display_cross(subset_out, subset_in, alias_map)
 
@@ -743,12 +781,14 @@ class RefDialog(QtGui.QDialog):
                 for _, target in obj_refs:
                     incoming[addr].add(target)
 
+        if DEBUG: print("DEBUG KEYS OUTGOING =", list(outgoing.keys())[:50])
+
         return outgoing, incoming
 
     # --------------------------------------------------------
     # Affichage sortant
     # --------------------------------------------------------
-    def display_outgoing(self, refs, alias_map):
+    def display_outgoing(self, refs, alias_map, outgoing_all):
         self.tree.clear()
         by_sel = {}
         for sel, target in refs:
@@ -757,19 +797,20 @@ class RefDialog(QtGui.QDialog):
         for sel in sorted(by_sel.keys()):
             alias = self.sheet.getAlias(sel)
             title = f"{sel} ({alias})" if alias else sel
-            title = self.enrich_label(sel, title)  # ← AJOUT
+            title = self.enrich_label(sel, title)
+
+            # 1) Créer la racine SANS l’ouvrir
             root = QtGui.QTreeWidgetItem(self.tree, [title])
 
+            # 2) Construire toute la hiérarchie FERMÉE
+            visited = set()
+            self.add_outgoing_recursive(root, sel, outgoing_all, alias_map, visited)
+
+            # 3) Fermer tout
+            self.tree.collapseAll()
+
+            # 4) Ouvrir UNIQUEMENT la racine
             root.setExpanded(True)
-
-            for target in sorted(by_sel[sel]):
-                # ICI : on passe sel comme adresse courante
-                label = f"→ {format_ref(self.sheet, target, alias_map, sel)}"
-                label = self.enrich_label(target, label)
-                child = QtGui.QTreeWidgetItem(root, [label])
-                self.set_tooltip(child, target)
-
-        self.tree.expandAll()
 
     # --------------------------------------------------------
     # Affichage entrant
@@ -795,7 +836,7 @@ class RefDialog(QtGui.QDialog):
                 child = QtGui.QTreeWidgetItem(root, [label])
                 self.set_tooltip(child, source)
 
-        self.tree.expandAll()
+
 
     # --------------------------------------------------------
     # Affichage croisé
@@ -840,7 +881,7 @@ class RefDialog(QtGui.QDialog):
                     child = QtGui.QTreeWidgetItem(in_node, [label])
                     self.set_tooltip(child, src)
 
-        self.tree.expandAll()
+
 
     # --------------------------------------------------------
     # Tooltip
