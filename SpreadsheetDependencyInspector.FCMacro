@@ -727,8 +727,9 @@ class RefDialog(QtGui.QDialog):
         for sel in sorted(by_sel.keys()):
             alias = self.sheet.getAlias(sel)
             title = f"{sel} ({alias})" if alias else sel
-
+            title = self.enrich_label(sel, title)  # ← AJOUT
             root = QtGui.QTreeWidgetItem(self.tree, [title])
+
             root.setExpanded(True)
 
             for target in sorted(by_sel[sel]):
@@ -752,8 +753,9 @@ class RefDialog(QtGui.QDialog):
         for sel in sorted(by_sel.keys()):
             alias = self.sheet.getAlias(sel)
             title = f"{sel} ({alias})" if alias else sel
-
+            title = self.enrich_label(sel, title)  # ← AJOUT
             root = QtGui.QTreeWidgetItem(self.tree, [title])
+
             root.setExpanded(True)
 
             for source in sorted(by_sel[sel]):
@@ -781,8 +783,9 @@ class RefDialog(QtGui.QDialog):
                 continue
 
             alias = self.sheet.getAlias(addr)
-            title = f"{addr} ({alias})" if alias else addr
 
+            title = f"{addr} ({alias})" if alias else addr
+            title = self.enrich_label(addr, title)
             root = QtGui.QTreeWidgetItem(self.tree, [title])
             root.setExpanded(True)
 
