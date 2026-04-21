@@ -12,6 +12,11 @@ import re
 import os, configparser
 from PySide import QtGui, QtCore
 
+import xml.etree.ElementTree as ET
+
+
+
+
 # Nom du fichier INI (en dur)
 INI_FILENAME = "SpreadsheetDependencyInspector.ini"
 
@@ -19,8 +24,27 @@ INI_FILENAME = "SpreadsheetDependencyInspector.ini"
 MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
 INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
 
+def iter_cells_from_xml(sh):
+    xml_text = sh.cells.Content
+    root = ET.fromstring(xml_text)
+
+    for cell in root.findall("Cell"):
+        addr = cell.get("address")
+        content = cell.get("content", "")
+        alias = cell.get("alias", None)
+        yield addr, content, alias
 
 
+
+def iter_cells_from_xml(sh):
+    xml_text = sh.cells.Content
+    root = ET.fromstring(xml_text)
+
+    for cell in root.findall("Cell"):
+        addr = cell.get("address")
+        content = cell.get("content", "")
+        alias = cell.get("alias", None)
+        yield addr, content, alias
 
 # ------------------------------------------------------------
 # Convertit (col,row) → "A1"
@@ -243,30 +267,53 @@ class RefDialog(QtGui.QDialog):
 
         layout = QtGui.QVBoxLayout()
 
-        # Modes
+        # --- Ligne du haut : modes + bouton maj ---
+        top_line = QtGui.QHBoxLayout()
+
+        modes_box = QtGui.QVBoxLayout()
         self.mode_out = QtGui.QRadioButton("Cellule sélectionnée → Cellules utilisées dans la formule")
         self.mode_in = QtGui.QRadioButton("Cellule sélectionnée → Cellules l'utilisant dans leur formule")
         self.mode_cross = QtGui.QRadioButton("Références croisées complètes")
-
         self.mode_cross.setChecked(True)
 
         self.mode_out.toggled.connect(self.recompute)
         self.mode_in.toggled.connect(self.recompute)
         self.mode_cross.toggled.connect(self.recompute)
 
-        layout.addWidget(self.mode_out)
-        layout.addWidget(self.mode_in)
-        layout.addWidget(self.mode_cross)
+        modes_box.addWidget(self.mode_out)
+        modes_box.addWidget(self.mode_in)
+        modes_box.addWidget(self.mode_cross)
 
-        # Cases à cocher
+
+        self.btn_refresh = QtGui.QPushButton()
+        self.btn_refresh.setMaximumWidth(32)
+
+        icon = QtGui.QApplication.style().standardIcon(QtGui.QStyle.SP_BrowserReload)
+        self.btn_refresh.setIcon(icon)
+
+        self.btn_refresh.setToolTip("Mettre à jour")  # ← HINT ajouté
+
+        self.btn_refresh.clicked.connect(self.recompute)
+
+        top_line.addLayout(modes_box)
+        top_line.addWidget(self.btn_refresh)
+
+        layout.addLayout(top_line)
+
+        # --- Ligne des cases à cocher ---
+        checks_line = QtGui.QHBoxLayout()
+
         self.show_formula = QtGui.QCheckBox("Afficher la formule dans la ligne")
         self.show_value = QtGui.QCheckBox("Afficher la valeur dans la ligne")
 
         self.show_formula.stateChanged.connect(self.recompute)
         self.show_value.stateChanged.connect(self.recompute)
 
-        layout.addWidget(self.show_formula)
-        layout.addWidget(self.show_value)
+        checks_line.addWidget(self.show_formula)
+        checks_line.addWidget(self.show_value)
+
+        layout.addLayout(checks_line)
+
 
         # Arbre
         self.tree = QtGui.QTreeWidget()
@@ -308,6 +355,7 @@ class RefDialog(QtGui.QDialog):
         self.load_settings()
 
         self.recompute()
+
 
     def load_settings(self):
         if not os.path.exists(INI_PATH):
@@ -475,20 +523,49 @@ class RefDialog(QtGui.QDialog):
     # Sélection actuelle
     # --------------------------------------------------------
     def get_current_selection(self):
+
+        # 🔥 Mise à jour de la feuille active
+        view = Gui.activeView()
+        if hasattr(view, "getSheet"):
+            self.sheet = view.getSheet()
+
+        # 🔍 PRINT 1 — quelle feuille FreeCAD croit active
+        print("=== get_current_selection ===")
+        print("self.sheet =", self.sheet)
+        print("self.sheet.Name =", self.sheet.Name)
+        print("self.sheet.Label =", self.sheet.Label)
+
         sel = self.sheet.ViewObject.getView().selectedCells()
+
+        # 🔍 PRINT 2 — ce que renvoie selectedCells()
+        print("selectedCells() raw =", sel)
+
         addrs = []
 
         for item in sel:
             if len(item) == 2 and isinstance(item[0], int):
                 col, row = item
-                addrs.append(cell_to_addr(col, row))
+                addr = cell_to_addr(col, row)
+                print("→ addr int =", addr)
+                addrs.append(addr)
+
             elif len(item) == 2 and isinstance(item[0], str):
-                addrs.append(f"{item[0]}{item[1]}")
+                addr = f"{item[0]}{item[1]}"
+                print("→ addr str =", addr)
+                addrs.append(addr)
+
             elif len(item) == 4:
                 col1, row1, col2, row2 = item
-                for c in range(col1, col2+1):
-                    for r in range(row1, row2+1):
-                        addrs.append(cell_to_addr(c, r))
+                print("→ range:", item)
+                for c in range(col1, col2 + 1):
+                    for r in range(row1, row2 + 1):
+                        addr = cell_to_addr(c, r)
+                        print("   → addr range =", addr)
+                        addrs.append(addr)
+
+        # 🔍 PRINT 3 — résultat final
+        print("addrs final =", addrs)
+        print("============================")
 
         return addrs
 
@@ -496,44 +573,87 @@ class RefDialog(QtGui.QDialog):
     # Recompute
     # --------------------------------------------------------
     def recompute(self):
+        print("OUT :", self.mode_out.isChecked())
+        print("IN  :", self.mode_in.isChecked())
+        print("CROSS:", self.mode_cross.isChecked())
+
         self.tree.clear()
 
+        # 🔍 PRINT 1 — ce que renvoie get_current_selection()
+        print("=== DEBUG SELECTION ===")
         selected_addrs = self.get_current_selection()
+        print("selected_addrs =", selected_addrs)
+
+        # 🔍 PRINT 2 — si tu veux savoir quel objet FreeCAD est sélectionné
+        sel = Gui.Selection.getSelection()
+        print("Gui.Selection =", sel)
+        if sel:
+            obj = sel[0]
+            print("Obj.TypeId =", obj.TypeId)
+            print("Obj.Name   =", obj.Name)
+            print("Obj.Label  =", obj.Label)
+
         if not selected_addrs and not self.mode_cross.isChecked():
+            print("=== STOP: aucune sélection et pas en mode cross ===")
             return
 
         alias_map = build_alias_map(self.sheet)
 
+        # 🔍 PRINT 3 — alias map
+        print("alias_map =", alias_map)
+
         if self.mode_out.isChecked():
             refs = self.compute_outgoing(selected_addrs, alias_map)
+            print("=== OUTGOING ===")
+            print("refs =", refs)
             self.display_outgoing(refs, alias_map)
 
         elif self.mode_in.isChecked():
             refs = self.compute_incoming(selected_addrs, alias_map)
+            print("=== INCOMING ===")
+            print("refs =", refs)
             self.display_incoming(refs, alias_map)
 
         elif self.mode_cross.isChecked():
             outgoing, incoming = self.compute_cross_references(alias_map)
 
-            # Mode références croisées : uniquement les cellules sélectionnées
+            print("=== CROSS RAW ===")
+            print("outgoing =", outgoing)
+            print("incoming =", incoming)
+
             subset_out = {addr: outgoing.get(addr, set()) for addr in selected_addrs}
             subset_in = {addr: incoming.get(addr, set()) for addr in selected_addrs}
+
+            print("=== CROSS FILTERED ===")
+            print("subset_out =", subset_out)
+            print("subset_in  =", subset_in)
 
             self.display_cross(subset_out, subset_in, alias_map)
 
     # --------------------------------------------------------
     # Mode sortant
     # --------------------------------------------------------
+
     def compute_outgoing(self, selected_addrs, alias_map):
-        refs = set()
-        for sel in selected_addrs:
-            formula = self.sheet.getContents(sel)
-            raw = extract_raw_refs(formula)
-            resolved = resolve_refs(self.sheet, raw, alias_map)
-            for r in resolved:
-                canon = canonicalize(r, alias_map)
-                refs.add((sel, canon))
-        return refs
+        outgoing = set()
+
+        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
+            for addr, content, alias in iter_cells_from_xml(sh):
+
+                if not content or not content.startswith("="):
+                    continue
+
+                raw = extract_raw_refs(content)
+                resolved = resolve_refs(sh, raw, alias_map)
+
+                for sel in selected_addrs:
+                    if sel == addr:  # la cellule sélectionnée contient la formule
+                        for r in resolved:
+                            qualified = canonicalize(r, alias_map)
+                            outgoing.add((sel, qualified))
+                        break  # ← sortir après avoir traité toutes les références
+
+        return outgoing
 
     # --------------------------------------------------------
     # Mode entrant
@@ -541,21 +661,23 @@ class RefDialog(QtGui.QDialog):
     def compute_incoming(self, selected_addrs, alias_map):
         incoming = set()
 
-        for addr in all_cells(self.sheet):
-            formula = self.sheet.getContents(addr)
-            raw = extract_raw_refs(formula)
-            resolved = resolve_refs(self.sheet, raw, alias_map)
+        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
 
-            for sel in selected_addrs:
-                for r in resolved:
-                    canon = canonicalize(r, alias_map)
-                    if canon == sel:
-                        incoming.add((sel, addr))
-                        break
+            for addr, content, alias in iter_cells_from_xml(sh):
+                if not content or not content.startswith("="):
+                    continue
 
-        obj_refs = find_objects_using_cells(self.sheet, selected_addrs, alias_map)
-        incoming.update(obj_refs)
+                raw = extract_raw_refs(content)
+                resolved = resolve_refs(sh, raw, alias_map)
 
+                for sel in selected_addrs:
+                    for r in resolved:
+                        canon = canonicalize(r, alias_map)
+                        if canon == sel:
+                            incoming.add((sel, f"{sh.Name}.{addr}"))
+                            break
+
+        incoming.update(find_objects_using_cells(self.sheet, selected_addrs, alias_map))
         return incoming
 
     # --------------------------------------------------------
@@ -565,25 +687,31 @@ class RefDialog(QtGui.QDialog):
         outgoing = {}
         incoming = {}
 
-        for addr in all_cells(self.sheet):
-            outgoing[addr] = set()
-            incoming[addr] = set()
+        # Initialisation pour TOUTES les feuilles
+        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
+            for addr in all_cells(sh):
+                outgoing[addr] = set()
+                incoming[addr] = set()
 
-        for addr in all_cells(self.sheet):
-            formula = self.sheet.getContents(addr)
-            raw = extract_raw_refs(formula)
-            resolved = resolve_refs(self.sheet, raw, alias_map)
+        # Analyse des formules dans TOUTES les feuilles
+        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
+            for addr in all_cells(sh):
+                formula = sh.getContents(addr)
+                raw = extract_raw_refs(formula)
+                resolved = resolve_refs(sh, raw, alias_map)
 
-            for r in resolved:
-                canon = canonicalize(r, alias_map)
-                if canon in outgoing:
-                    outgoing[addr].add(canon)
-                    incoming[canon].add(addr)
+                for r in resolved:
+                    canon = canonicalize(r, alias_map)
+                    if canon in outgoing:
+                        incoming[canon].add(f"{sh.Name}.{addr}")
+                        outgoing[addr].add(f"{sh.Name}.{canon}")
 
-        for addr in all_cells(self.sheet):
-            obj_refs = find_objects_using_cells(self.sheet, [addr], alias_map)
-            for _, target in obj_refs:
-                incoming[addr].add(target)
+        # Analyse des objets FreeCAD pour TOUTES les feuilles
+        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
+            for addr in all_cells(sh):
+                obj_refs = find_objects_using_cells(sh, [addr], alias_map)
+                for _, target in obj_refs:
+                    incoming[addr].add(target)
 
         return outgoing, incoming
 
