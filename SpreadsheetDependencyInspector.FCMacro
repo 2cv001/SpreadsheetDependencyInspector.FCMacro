@@ -207,7 +207,6 @@ def format_ref(sheet, ref, alias_map, current_addr):
     return ref
 
 
-
 # ------------------------------------------------------------
 # Objets FreeCAD utilisant des cellules
 # ------------------------------------------------------------
@@ -259,6 +258,23 @@ def all_cells(sheet):
 # Boîte de dialogue
 # ------------------------------------------------------------
 class RefDialog(QtGui.QDialog):
+
+    def set_all_expanded(self, expand=True):
+        def recurse(item, level=0):
+            # Niveau 0 = racine → toujours ouverte
+            if level == 0:
+                item.setExpanded(True)
+            # Niveau 1 = sections "Utilise" / "Est utilisé par" → toujours ouvertes
+            elif level == 1:
+                item.setExpanded(True)
+            else:
+                item.setExpanded(expand)
+
+            for i in range(item.childCount()):
+                recurse(item.child(i), level + 1)
+
+        for i in range(self.tree.topLevelItemCount()):
+            recurse(self.tree.topLevelItem(i), 0)
 
     def add_outgoing_recursive(self, parent, cell, outgoing_refs, alias_map, visited, depth=0):
         if cell in visited:
@@ -330,6 +346,8 @@ class RefDialog(QtGui.QDialog):
         self.btn_expand = QtGui.QPushButton("Déplier / Replier")
         self.btn_expand.setMaximumWidth(120)
         right_box.addWidget(self.btn_expand)
+        self.expanded = False
+        self.btn_expand.clicked.connect(self.toggle_expand)
 
         # Assemblage
         top_line.addLayout(modes_box)
@@ -1085,6 +1103,27 @@ class RefDialog(QtGui.QDialog):
     def closeEvent(self, event):
         self.save_settings()
         super().closeEvent(event)
+
+    def toggle_expand(self):
+        self.expanded = not self.expanded
+
+        if self.expanded:
+            # 🔥 Déplier = comme avant, ne pas toucher
+            self.set_all_expanded(True)
+            self.btn_expand.setText("Replier")
+        else:
+            # 🔥 Replier = structure intelligente (comme après un recalcul)
+            self.recompute()
+            self.btn_expand.setText("Déplier")
+
+    def set_all_expanded(self, expand=True):
+        def recurse(item):
+            item.setExpanded(expand)
+            for i in range(item.childCount()):
+                recurse(item.child(i))
+
+        for i in range(self.tree.topLevelItemCount()):
+            recurse(self.tree.topLevelItem(i))
 
 
 # ------------------------------------------------------------
