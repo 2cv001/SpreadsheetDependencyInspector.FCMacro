@@ -664,11 +664,23 @@ class RefDialog(QtGui.QDialog):
             self.display_outgoing(refs, alias_map, outgoing_norm)
 
 
+
         elif self.mode_in.isChecked():
             refs = self.compute_incoming(selected_addrs, alias_map)
             if DEBUG: print("=== INCOMING ===")
             if DEBUG: print("refs =", refs)
-            self.display_incoming(refs, alias_map)
+            # Récupérer la map complète (déjà récursive)
+            _, incoming_all = self.compute_cross_references(alias_map)
+
+            # Normalisation comme pour OUT
+            incoming_norm = {}
+            for key, sources in incoming_all.items():
+                simple_key = key.split(".")[-1]
+                incoming_norm[simple_key] = {s.split(".")[-1] for s in sources}
+
+            # Affichage avec la map complète
+            self.display_incoming(refs, alias_map, incoming_norm)
+
 
         elif self.mode_cross.isChecked():
             outgoing, incoming = self.compute_cross_references(alias_map)
@@ -696,7 +708,21 @@ class RefDialog(QtGui.QDialog):
             if DEBUG: print("subset_out =", subset_out)
             if DEBUG: print("subset_in  =", subset_in)
 
-            self.display_cross(subset_out, subset_in, alias_map)
+            # Récupérer les maps complètes
+            outgoing_all, incoming_all = self.compute_cross_references(alias_map)
+
+            # Normalisation
+            outgoing_norm = {
+                k.split(".")[-1]: {s.split(".")[-1] for s in v}
+                for k, v in outgoing_all.items()
+            }
+            incoming_norm = {
+                k.split(".")[-1]: {s.split(".")[-1] for s in v}
+                for k, v in incoming_all.items()
+            }
+
+            # Appel CROSS avec récursion
+            self.display_cross(subset_out, subset_in, alias_map, outgoing_norm, incoming_norm)
 
     # --------------------------------------------------------
     # Mode sortant
@@ -815,7 +841,8 @@ class RefDialog(QtGui.QDialog):
     # --------------------------------------------------------
     # Affichage entrant
     # --------------------------------------------------------
-    def display_incoming(self, refs, alias_map):
+
+    def display_incoming(self, refs, alias_map, incoming_norm=None):
         self.tree.clear()
         by_sel = {}
         for sel, source in refs:
@@ -824,64 +851,123 @@ class RefDialog(QtGui.QDialog):
         for sel in sorted(by_sel.keys()):
             alias = self.sheet.getAlias(sel)
             title = f"{sel} ({alias})" if alias else sel
-            title = self.enrich_label(sel, title)  # ← AJOUT
+            title = self.enrich_label(sel, title)
             root = QtGui.QTreeWidgetItem(self.tree, [title])
 
+            # 🔥 On ouvre seulement la racine
             root.setExpanded(True)
 
+            # Dépendances directes
             for source in sorted(by_sel[sel]):
-                # ICI : on passe sel comme adresse courante
-                label = f"← {format_ref(self.sheet, source, alias_map, sel)}"
-                label = self.enrich_label(source, label)
-                child = QtGui.QTreeWidgetItem(root, [label])
+                txt = f"← {source}"
+                txt = self.enrich_label(source, txt)
+                child = QtGui.QTreeWidgetItem(root, [txt])
                 self.set_tooltip(child, source)
 
+                # 🔥 Tous les enfants directs restent fermés
+                child.setExpanded(False)
 
+            # 🔥 Dépendances profondes (récursion)
+            if incoming_norm:
+                def add_recursive(parent_item, addr):
+                    if addr not in incoming_norm:
+                        return
+                    for src in sorted(incoming_norm[addr]):
+                        txt = f"← {src}"
+                        txt = self.enrich_label(src, txt)
+                        child = QtGui.QTreeWidgetItem(parent_item, [txt])
+                        self.set_tooltip(child, src)
+
+                        # 🔥 Tous les niveaux récursifs restent fermés
+                        child.setExpanded(False)
+
+                        add_recursive(child, src)
+
+                add_recursive(root, sel)
 
     # --------------------------------------------------------
     # Affichage croisé
     # --------------------------------------------------------
-    def display_cross(self, outgoing, incoming, alias_map):
+    def display_cross(self, outgoing, incoming, alias_map,
+                      outgoing_norm=None, incoming_norm=None):
+
         self.tree.clear()
 
-        for addr in sorted(outgoing.keys()):
-            formula = self.sheet.getContents(addr)
+        for sel in sorted(outgoing.keys()):
+            alias = self.sheet.getAlias(sel)
+            title = f"{sel} ({alias})" if alias else sel
+            title = self.enrich_label(sel, title)
 
-            # On masque seulement les cellules totalement isolées
-            if (not formula or not formula.startswith("=")) \
-                    and not outgoing[addr] \
-                    and not incoming[addr]:
-                continue
-
-            alias = self.sheet.getAlias(addr)
-
-            title = f"{addr} ({alias})" if alias else addr
-            title = self.enrich_label(addr, title)
             root = QtGui.QTreeWidgetItem(self.tree, [title])
-            root.setExpanded(True)
+            root.setExpanded(True)  # ✔ Racine ouverte
 
-            if outgoing[addr]:
-                out_node = QtGui.QTreeWidgetItem(root, ["Utilise"])
-                out_node.setExpanded(True)
+            # --- OUTGOING (utilisées par sel) ---
+            out_parent = QtGui.QTreeWidgetItem(root, ["Utilisées par"])
+            out_parent.setExpanded(True)  # ✔ OUVERT au départ
 
-                for tgt in sorted(outgoing[addr]):
-                    label = format_ref(self.sheet, tgt, alias_map, addr)
-                    label = self.enrich_label(tgt, label)
-                    child = QtGui.QTreeWidgetItem(out_node, [label])
-                    self.set_tooltip(child, tgt)
+            # Niveau direct
+            for tgt in sorted(outgoing.get(sel, [])):
+                txt = f"→ {tgt}"
+                txt = self.enrich_label(tgt, txt)
+                child = QtGui.QTreeWidgetItem(out_parent, [txt])
+                self.set_tooltip(child, tgt)
+                child.setExpanded(False)  # ✔ Fermé
 
-            if incoming[addr]:
-                in_node = QtGui.QTreeWidgetItem(root, ["Utilisée par"])
-                in_node.setExpanded(True)
+            # 🔥 Récursion OUTGOING
+            if outgoing_norm:
+                visited_out = set()
 
-                for src in sorted(incoming[addr]):
-                    label = format_ref(self.sheet, src, alias_map, addr)
+                def add_out_recursive(parent_item, addr):
+                    if addr in visited_out:
+                        return
+                    visited_out.add(addr)
 
-                    label = self.enrich_label(src, label)
-                    child = QtGui.QTreeWidgetItem(in_node, [label])
-                    self.set_tooltip(child, src)
+                    if addr not in outgoing_norm:
+                        return
 
+                    for tgt in sorted(outgoing_norm[addr]):
+                        txt = f"→ {tgt}"
+                        txt = self.enrich_label(tgt, txt)
+                        child = QtGui.QTreeWidgetItem(parent_item, [txt])
+                        self.set_tooltip(child, tgt)
+                        child.setExpanded(False)  # ✔ Fermé
+                        add_out_recursive(child, tgt)
 
+                add_out_recursive(out_parent, sel)
+
+            # --- INCOMING (utilisant sel) ---
+            in_parent = QtGui.QTreeWidgetItem(root, ["Utilisant"])
+            in_parent.setExpanded(True)  # ✔ OUVERT au départ
+
+            # Niveau direct
+            for src in sorted(incoming.get(sel, [])):
+                txt = f"← {src}"
+                txt = self.enrich_label(src, txt)
+                child = QtGui.QTreeWidgetItem(in_parent, [txt])
+                self.set_tooltip(child, src)
+                child.setExpanded(False)  # ✔ Fermé
+
+            #  Récursion INCOMING
+            if incoming_norm:
+                visited_in = set()
+
+                def add_in_recursive(parent_item, addr):
+                    if addr in visited_in:
+                        return
+                    visited_in.add(addr)
+
+                    if addr not in incoming_norm:
+                        return
+
+                    for src in sorted(incoming_norm[addr]):
+                        txt = f"← {src}"
+                        txt = self.enrich_label(src, txt)
+                        child = QtGui.QTreeWidgetItem(parent_item, [txt])
+                        self.set_tooltip(child, src)
+                        child.setExpanded(False)  # ✔ Fermé
+                        add_in_recursive(child, src)
+
+                add_in_recursive(in_parent, sel)
 
     # --------------------------------------------------------
     # Tooltip
