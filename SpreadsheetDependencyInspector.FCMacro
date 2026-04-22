@@ -310,7 +310,9 @@ class RefDialog(QtGui.QDialog):
 
         if DEBUG: print(">>> INIT CALLED")
 
-        super(RefDialog, self).__init__()
+        # super(RefDialog, self).__init__()
+        super(RefDialog, self).__init__(FreeCADGui.getMainWindow())
+
         self.sheet = sheet
 
         self.setWindowTitle("Analyse des références (Spreadsheet + Objets FreeCAD)")
@@ -371,7 +373,13 @@ class RefDialog(QtGui.QDialog):
         self.tree.itemClicked.connect(self.highlight)
 
         self.setLayout(layout)
-        self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        # self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(
+            QtCore.Qt.Window
+            | QtCore.Qt.SubWindow
+            | QtCore.Qt.WindowTitleHint
+            | QtCore.Qt.WindowCloseButtonHint
+        )
 
         # Tooltips, palette, etc.
         app = QtGui.QApplication.instance()
