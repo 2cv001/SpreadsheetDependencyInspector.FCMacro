@@ -375,10 +375,10 @@ class RefDialog(QtGui.QDialog):
         self.setLayout(layout)
         # self.setWindowFlags(self.windowFlags() | QtCore.Qt.WindowStaysOnTopHint)
         self.setWindowFlags(
-            QtCore.Qt.Window
-            | QtCore.Qt.SubWindow
+            QtCore.Qt.Dialog
             | QtCore.Qt.WindowTitleHint
             | QtCore.Qt.WindowCloseButtonHint
+            | QtCore.Qt.WindowMinMaxButtonsHint
         )
 
         # Tooltips, palette, etc.
