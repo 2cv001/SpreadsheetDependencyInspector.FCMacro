@@ -695,13 +695,7 @@ class RefDialog(QtGui.QDialog):
         if hasattr(view, "getSheet"):
             self.sheet = view.getSheet()
 
-        if DEBUG: print("=== get_current_selection ===")
-        if DEBUG: print("self.sheet =", self.sheet)
-        if DEBUG: print("self.sheet.Name =", self.sheet.Name)
-        if DEBUG: print("self.sheet.Label =", self.sheet.Label)
-
         sel = self.sheet.ViewObject.getView().selectedCells()
-        if DEBUG: print("selectedCells() raw =", sel)
 
         addrs = []
 
@@ -709,7 +703,6 @@ class RefDialog(QtGui.QDialog):
 
             # 🔥 Cas 1 — FreeCAD renvoie une chaîne : "D8", "D10", "D11", ...
             if isinstance(item, str):
-                if DEBUG: print("→ addr str =", item)
                 addrs.append(item)
                 continue
 
@@ -717,7 +710,6 @@ class RefDialog(QtGui.QDialog):
             if len(item) == 2 and isinstance(item[0], int):
                 col, row = item
                 addr = cell_to_addr(col, row)
-                if DEBUG: print("→ addr int =", addr)
                 addrs.append(addr)
                 continue
 
@@ -852,10 +844,7 @@ class RefDialog(QtGui.QDialog):
 
                 return no_formula and no_value and no_links
 
-            print("=== FILTRAGE DES CELLULES VIDES ===")
-            for k in outgoing_full.keys():
-                if is_really_empty(k):
-                    print("SUPPRIMÉ :", k)
+
 
             # 1) Filtrage global
             filtered_outgoing = {
@@ -1090,7 +1079,7 @@ class RefDialog(QtGui.QDialog):
                       outgoing_norm=None, incoming_norm=None):
 
         self.tree.clear()
-        print("OUT NORM KEYS =", outgoing_norm.keys())
+
 
         for sel in sorted(outgoing.keys()):
 
