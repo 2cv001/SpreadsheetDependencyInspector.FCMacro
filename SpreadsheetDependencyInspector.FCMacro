@@ -479,10 +479,10 @@ class RefDialog(QtGui.QDialog):
         # Charger les réglages
         self.load_settings()
 
-        # 🔥 1) Faire un seul recompute initial
+        #  1) Faire un seul recompute initial
         self.recompute()
 
-        # 🔥 2) Connecter les signaux APRÈS le premier recompute
+        #  2) Connecter les signaux APRÈS le premier recompute
         self.mode_out.toggled.connect(self.recompute)
         self.mode_in.toggled.connect(self.recompute)
         self.mode_cross.toggled.connect(self.recompute)
@@ -780,6 +780,8 @@ class RefDialog(QtGui.QDialog):
                 outgoing_norm[simple_key] = {t.split(".")[-1] for t in targets}
 
             self.display_outgoing(refs, alias_map, outgoing_norm)
+            self.expanded = False
+            self.btn_expand.setText(tr("btn_expand"))
 
         # ------------------------------------------------------------
         # MODE IN
@@ -795,7 +797,8 @@ class RefDialog(QtGui.QDialog):
                 incoming_norm[simple_key] = {s.split(".")[-1] for s in sources}
 
             self.display_incoming(refs, alias_map, incoming_norm)
-
+            self.expanded = False
+            self.btn_expand.setText(tr("btn_expand"))
 
         # ------------------------------------------------------------
         # MODE CROSS
@@ -888,6 +891,7 @@ class RefDialog(QtGui.QDialog):
             }
 
             # 4) Affichage final
+
             self.display_cross(
                 subset_out_local,
                 subset_in_local,
@@ -895,6 +899,9 @@ class RefDialog(QtGui.QDialog):
                 outgoing_norm,
                 incoming_norm
             )
+            # Remettre le bouton en mode "Déplier"
+            self.expanded = False
+            self.btn_expand.setText(tr("btn_expand"))
 
     # --------------------------------------------------------
     # Mode sortant
