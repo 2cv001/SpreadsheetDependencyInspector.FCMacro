@@ -1,4 +1,5 @@
 
+
 # SpreadsheetDependencyInspector.FCMacro
 
 import FreeCAD as App
@@ -795,25 +796,19 @@ class RefDialog(QtGui.QDialog):
 
             self.display_incoming(refs, alias_map, incoming_norm)
 
+
         # ------------------------------------------------------------
-        # MODE CROSS (version corrigée)
+        # MODE CROSS
         # ------------------------------------------------------------
         elif self.mode_cross.isChecked():
             outgoing, incoming = self.compute_cross_references(alias_map)
 
-            if DEBUG:
-                print("=== CROSS RAW ===")
-                print("outgoing =", outgoing)
-                print("incoming =", incoming)
-
             outgoing_full = outgoing
             incoming_full = incoming
 
-            # On mappe la sélection sur la feuille active
             sheet_name = self.sheet.Name
             selected_full = [f"{sheet_name}.{addr}" for addr in selected_addrs]
 
-            # On ne garde que les cellules sélectionnées qui existent dans le graphe
             selected_full = [
                 a for a in selected_full
                 if a in outgoing_full or a in incoming_full
@@ -825,12 +820,6 @@ class RefDialog(QtGui.QDialog):
             subset_out = {addr: outgoing_full.get(addr, set()) for addr in selected_full}
             subset_in = {addr: incoming_full.get(addr, set()) for addr in selected_full}
 
-            if DEBUG:
-                print("=== CROSS FILTERED ===")
-                print("subset_out =", subset_out)
-                print("subset_in  =", subset_in)
-
-            # Conversion en adresses locales pour display_cross()
             subset_out_local = {
                 k.split(".")[-1]: {t.split(".")[-1] for t in v}
                 for k, v in subset_out.items()
@@ -841,11 +830,71 @@ class RefDialog(QtGui.QDialog):
                 for k, v in subset_in.items()
             }
 
-            # Pour la récursion, on garde les clés complètes
-            outgoing_norm = outgoing_full
-            incoming_norm = incoming_full
+            # ------------------------------------------------------------
+            # Filtrage des cellules totalement vides
+            # ------------------------------------------------------------
+            def is_really_empty(full_key):
+                sheet_name, cell = full_key.split(".")
+                sh = App.ActiveDocument.getObject(sheet_name)
 
-            self.display_cross(subset_out_local, subset_in_local, alias_map, outgoing_norm, incoming_norm)
+                formula = sh.getContents(cell)
+                try:
+                    value = sh.get(cell)
+                except:
+                    value = ""
+
+                no_formula = not formula or not formula.strip()
+                no_value = (value in ("", None)) or (str(value).strip() == "")
+                no_links = (not outgoing_full.get(full_key)) and (not incoming_full.get(full_key))
+
+                return no_formula and no_value and no_links
+
+            print("=== FILTRAGE DES CELLULES VIDES ===")
+            for k in outgoing_full.keys():
+                if is_really_empty(k):
+                    print("SUPPRIMÉ :", k)
+
+            # 1) Filtrage global
+            filtered_outgoing = {
+                k: v for k, v in outgoing_full.items()
+                if not is_really_empty(k)
+            }
+
+            filtered_incoming = {
+                k: v for k, v in incoming_full.items()
+                if not is_really_empty(k)
+            }
+
+            # 2) Normalisation locale pour la récursion
+            outgoing_norm = {
+                k.split(".")[-1]: {t.split(".")[-1] for t in v}
+                for k, v in filtered_outgoing.items()
+            }
+
+            incoming_norm = {
+                k.split(".")[-1]: {s.split(".")[-1] for s in v}
+                for k, v in filtered_incoming.items()
+            }
+
+            # 3) Filtrage des racines locales
+            subset_out_local = {
+                k: v for k, v in subset_out_local.items()
+                if not is_really_empty(f"{sheet_name}.{k}")
+            }
+
+            subset_in_local = {
+                k: v for k, v in subset_in_local.items()
+                if not is_really_empty(f"{sheet_name}.{k}")
+            }
+
+            # 4) Affichage final
+            self.display_cross(
+                subset_out_local,
+                subset_in_local,
+                alias_map,
+                outgoing_norm,
+                incoming_norm
+            )
 
     # --------------------------------------------------------
     # Mode sortant
@@ -1034,6 +1083,7 @@ class RefDialog(QtGui.QDialog):
                       outgoing_norm=None, incoming_norm=None):
 
         self.tree.clear()
+        print("OUT NORM KEYS =", outgoing_norm.keys())
 
         for sel in sorted(outgoing.keys()):
 
@@ -1079,7 +1129,7 @@ class RefDialog(QtGui.QDialog):
                         return
 
                     for tgt in sorted(outgoing_norm[addr]):
-                        # 🔥 éviter doublon : ne pas réafficher le niveau direct
+                        #  éviter doublon : ne pas réafficher le niveau direct
                         if tgt in direct_out:
                             continue
 
@@ -1092,7 +1142,7 @@ class RefDialog(QtGui.QDialog):
 
                         add_out_recursive(child, tgt)
 
-                # 🔥 On part des enfants directs, mais sous LEUR propre nœud
+                #  On part des enfants directs, mais sous LEUR propre nœud
                 for tgt in direct_out:
                     child = children_by_addr[tgt]
                     add_out_recursive(child, tgt)
