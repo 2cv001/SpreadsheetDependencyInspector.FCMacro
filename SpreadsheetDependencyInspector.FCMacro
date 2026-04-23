@@ -290,6 +290,7 @@ def find_objects_using_cells(sheet, selected_addrs, alias_map):
     sheet_name = sheet.Name
     sheet_label = sheet.Label
 
+    # Capture les références complètes : datas.D6 ou <<datas>>.D6
     pattern = rf"(?:{re.escape(sheet_name)}|<<{re.escape(sheet_label)}>>)\.([A-Za-z_][A-Za-z0-9_]*)"
 
     for obj in App.ActiveDocument.Objects:
@@ -304,17 +305,24 @@ def find_objects_using_cells(sheet, selected_addrs, alias_map):
             if not isinstance(expr, str):
                 continue
 
+            # r = "D6", "D7", etc.
             refs = re.findall(pattern, expr)
 
             for sel in selected_addrs:
-                alias = sheet.getAlias(sel)
+                # sel = "datas.D6"
+                # On extrait la partie locale : "D6"
+                local = sel.split(".")[-1]
+
+                alias = sheet.getAlias(local)
 
                 for r in refs:
-                    if r == sel or r == alias:
+                    if r == local or r == alias:
                         used.add((sel, f"{obj.Name}.{prop}"))
                         break
 
     return used
+
+
 
 # ------------------------------------------------------------
 # Toutes les cellules utilisées
@@ -739,100 +747,105 @@ class RefDialog(QtGui.QDialog):
     # Recompute
     # --------------------------------------------------------
     def recompute(self):
-        if DEBUG: print(">>> RECOMPUTE CALLED")
+        if DEBUG:
+            print(">>> RECOMPUTE CALLED")
+        self.setWindowTitle(f"Analyse des références – {self.sheet.Label}")
 
         self.tree.clear()
 
         selected_addrs = self.get_current_selection()
 
         sel = Gui.Selection.getSelection()
-
         if sel:
             obj = sel[0]
 
-
+        # Si rien n'est sélectionné et qu'on n'est pas en mode CROSS → rien à faire
         if not selected_addrs and not self.mode_cross.isChecked():
-
             return
 
         alias_map = build_alias_map(self.sheet)
 
-
+        # ------------------------------------------------------------
+        # MODE OUT
+        # ------------------------------------------------------------
         if self.mode_out.isChecked():
             refs = self.compute_outgoing(selected_addrs, alias_map)
 
-            # Map complète pour la récursion
             outgoing_all, _ = self.compute_cross_references(alias_map)
 
-            # Normalisation : enlever le préfixe "datas."
             outgoing_norm = {}
             for key, targets in outgoing_all.items():
                 simple_key = key.split(".")[-1]
                 outgoing_norm[simple_key] = {t.split(".")[-1] for t in targets}
 
-            # ✔️ Correction ici : self, pas sself
             self.display_outgoing(refs, alias_map, outgoing_norm)
 
-
-
+        # ------------------------------------------------------------
+        # MODE IN
+        # ------------------------------------------------------------
         elif self.mode_in.isChecked():
             refs = self.compute_incoming(selected_addrs, alias_map)
-            if DEBUG: print("=== INCOMING ===")
-            if DEBUG: print("refs =", refs)
-            # Récupérer la map complète (déjà récursive)
+
             _, incoming_all = self.compute_cross_references(alias_map)
 
-            # Normalisation comme pour OUT
             incoming_norm = {}
             for key, sources in incoming_all.items():
                 simple_key = key.split(".")[-1]
                 incoming_norm[simple_key] = {s.split(".")[-1] for s in sources}
 
-            # Affichage avec la map complète
             self.display_incoming(refs, alias_map, incoming_norm)
 
-
+        # ------------------------------------------------------------
+        # MODE CROSS (version corrigée)
+        # ------------------------------------------------------------
         elif self.mode_cross.isChecked():
             outgoing, incoming = self.compute_cross_references(alias_map)
 
-            if DEBUG: print("=== CROSS RAW ===")
-            if DEBUG: print("outgoing =", outgoing)
-            if DEBUG: print("incoming =", incoming)
+            if DEBUG:
+                print("=== CROSS RAW ===")
+                print("outgoing =", outgoing)
+                print("incoming =", incoming)
 
-            # 🔥 Normalisation : enlever le préfixe "datas." ou "Sheet."
-            outgoing_simple = {
+            outgoing_full = outgoing
+            incoming_full = incoming
+
+            # On mappe la sélection sur la feuille active
+            sheet_name = self.sheet.Name
+            selected_full = [f"{sheet_name}.{addr}" for addr in selected_addrs]
+
+            # On ne garde que les cellules sélectionnées qui existent dans le graphe
+            selected_full = [
+                a for a in selected_full
+                if a in outgoing_full or a in incoming_full
+            ]
+
+            if not selected_full:
+                return
+
+            subset_out = {addr: outgoing_full.get(addr, set()) for addr in selected_full}
+            subset_in = {addr: incoming_full.get(addr, set()) for addr in selected_full}
+
+            if DEBUG:
+                print("=== CROSS FILTERED ===")
+                print("subset_out =", subset_out)
+                print("subset_in  =", subset_in)
+
+            # Conversion en adresses locales pour display_cross()
+            subset_out_local = {
                 k.split(".")[-1]: {t.split(".")[-1] for t in v}
-                for k, v in outgoing.items()
+                for k, v in subset_out.items()
             }
 
-            incoming_simple = {
+            subset_in_local = {
                 k.split(".")[-1]: {t.split(".")[-1] for t in v}
-                for k, v in incoming.items()
+                for k, v in subset_in.items()
             }
 
-            # 🔥 Filtrage basé sur les adresses simples (D11, D12, D13…)
-            subset_out = {addr: outgoing_simple.get(addr, set()) for addr in selected_addrs}
-            subset_in = {addr: incoming_simple.get(addr, set()) for addr in selected_addrs}
+            # Pour la récursion, on garde les clés complètes
+            outgoing_norm = outgoing_full
+            incoming_norm = incoming_full
 
-            if DEBUG: print("=== CROSS FILTERED ===")
-            if DEBUG: print("subset_out =", subset_out)
-            if DEBUG: print("subset_in  =", subset_in)
-
-            # Récupérer les maps complètes
-            outgoing_all, incoming_all = self.compute_cross_references(alias_map)
-
-            # Normalisation
-            outgoing_norm = {
-                k.split(".")[-1]: {s.split(".")[-1] for s in v}
-                for k, v in outgoing_all.items()
-            }
-            incoming_norm = {
-                k.split(".")[-1]: {s.split(".")[-1] for s in v}
-                for k, v in incoming_all.items()
-            }
-
-            # Appel CROSS avec récursion
-            self.display_cross(subset_out, subset_in, alias_map, outgoing_norm, incoming_norm)
+            self.display_cross(subset_out_local, subset_in_local, alias_map, outgoing_norm, incoming_norm)
 
     # --------------------------------------------------------
     # Mode sortant
@@ -888,55 +901,53 @@ class RefDialog(QtGui.QDialog):
     # Références croisées
     # --------------------------------------------------------
     def compute_cross_references(self, alias_map):
+
         outgoing = {}
         incoming = {}
 
-        # --- 1) Initialisation pour TOUTES les feuilles ---
+        # 1) Initialisation pour toutes les feuilles
         for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
             for addr in all_cells(sh):
-                outgoing[addr] = set()
-                incoming[addr] = set()
+                key = f"{sh.Name}.{addr}"
+                outgoing[key] = set()
+                incoming[key] = set()
 
-        # --- 2) Analyse des formules dans TOUTES les feuilles ---
+        # 2) Analyse des formules
         for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
             for addr in all_cells(sh):
 
                 formula = sh.getContents(addr)
-
-                # 🔥 IGNORER LES CELLULES VIDES
                 if not formula or not formula.strip():
                     continue
 
-                # Extraction brute des références
-                raw = extract_raw_refs(formula)
+                key = f"{sh.Name}.{addr}"
 
-                # Résolution (alias, noms de feuilles, etc.)
+                raw = extract_raw_refs(formula)
                 resolved = resolve_refs(sh, raw, alias_map)
 
                 for r in resolved:
-                    canon = canonicalize(r, alias_map)
+                    canon_local = canonicalize(r, alias_map)
+                    canon = f"{sh.Name}.{canon_local}"
 
-                    # 🔥 Sécurité : ignorer les auto-références
-                    if canon == addr:
+                    if canon == key:
                         continue
 
-                    # 🔥 Sécurité : ignorer les références hors tableur
                     if canon not in outgoing:
                         continue
 
-                    # Ajout des liens
-                    incoming[canon].add(f"{sh.Name}.{addr}")
-                    outgoing[addr].add(f"{sh.Name}.{canon}")
+                    incoming[canon].add(key)
+                    outgoing[key].add(canon)
 
-        # --- 3) Analyse des objets FreeCAD ---
+        # 3) Analyse des objets FreeCAD
         for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
             for addr in all_cells(sh):
-                obj_refs = find_objects_using_cells(sh, [addr], alias_map)
-                for _, target in obj_refs:
-                    incoming[addr].add(target)
+                key = f"{sh.Name}.{addr}"
 
-        if DEBUG:
-            print("DEBUG KEYS OUTGOING =", list(outgoing.keys())[:50])
+                # IMPORTANT : find_objects_using_cells attend des adresses locales
+                obj_refs = find_objects_using_cells(sh, [addr], alias_map)
+
+                for _, target in obj_refs:
+                    incoming[key].add(target)
 
         return outgoing, incoming
 
