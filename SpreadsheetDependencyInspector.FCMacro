@@ -62,7 +62,7 @@ TRANSLATIONS = {
         "mode_cross": "Références croisées complètes",
 
         # Boutons
-        "btn_expand": "Déplier / Replier",
+        "btn_expand": "Déplier",
         "btn_refresh_tt": "Mettre à jour",
 
         # Cases à cocher
@@ -91,7 +91,7 @@ TRANSLATIONS = {
         "mode_cross": "Full cross‑references",
 
         # Boutons
-        "btn_expand": "Expand / Collapse",
+        "btn_expand": "Expand",
         "btn_refresh_tt": "Refresh",
 
         # Cases à cocher
