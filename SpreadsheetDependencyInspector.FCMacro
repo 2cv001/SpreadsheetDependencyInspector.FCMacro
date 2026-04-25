@@ -1,27 +1,17 @@
-
-
-# SpreadsheetDependencyInspector.FCMacro
-
-import FreeCAD as App
-import FreeCADGui as Gui
-from PySide import QtGui, QtCore
-import re
-
-import os, configparser
-from PySide import QtGui, QtCore
+# SpreadsheetDependencyInspector2.FCMacro
 
 import xml.etree.ElementTree as ET
-
-
+import re
+from PySide import QtGui, QtCore
+import configparser
 
 
 # Nom du fichier INI (en dur)
 INI_FILENAME = "SpreadsheetDependencyInspector.ini"
-
 # Chemin complet vers le fichier INI
 MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
 INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
-DEBUG = False
+
 
 
 # Détermine la langue de l’utilisateur à partir de FreeCADGui
@@ -45,7 +35,6 @@ def get_user_language():
         return "en"
     except Exception:
         return "en"
-
 # Traduit une clé donnée selon la langue utilisateur
 def tr(key):
     lang = get_user_language()
@@ -62,7 +51,8 @@ TRANSLATIONS = {
         "mode_cross": "Références croisées complètes",
 
         # Boutons
-        "btn_expand": "Déplier",
+        "btn_expand": "Déplier / Replier",
+        "btn_collapse": "Replier / Déplier",
         "btn_refresh_tt": "Mettre à jour",
 
         # Cases à cocher
@@ -74,7 +64,6 @@ TRANSLATIONS = {
         "used_by": "Est utilisé par",
         "content_of": "Contenu de",
         "expression_of": "Expression de",
-
 
         # Enrichissement
         "expression": "expression",
@@ -91,7 +80,8 @@ TRANSLATIONS = {
         "mode_cross": "Full cross‑references",
 
         # Boutons
-        "btn_expand": "Expand",
+        "btn_expand": "Expand / Collapse",
+        "btn_collapse": "Collapse / Expand",
         "btn_refresh_tt": "Refresh",
 
         # Cases à cocher
@@ -113,311 +103,429 @@ TRANSLATIONS = {
 }
 
 
+def get_column(cell):
+    return ''.join([c for c in cell if not c.isdigit()])
 
-def iter_cells_from_xml(sh):
-    xml_text = sh.cells.Content
-    root = ET.fromstring(xml_text)
+def get_row(cell):
+    row = ''.join([c for c in cell if c.isdigit()])
+    if row == '':
+        row = '1'
+    return int(row)
 
-    for cell in root.findall("Cell"):
-        addr = cell.get("address")
-        content = cell.get("content", "")
-        alias = cell.get("alias", None)
-        yield addr, content, alias
-
-# ------------------------------------------------------------
-# Convertit (col,row) → "A1"
-# ------------------------------------------------------------
-def cell_to_addr(col, row):
-    letters = ""
-    c = col
-    while c >= 0:
-        letters = chr(c % 26 + ord('A')) + letters
-        c = c // 26 - 1
-    return f"{letters}{row+1}"
-
-# ------------------------------------------------------------
-# Convertit "A1" → (col,row)
-# ------------------------------------------------------------
-def addr_to_cell(addr):
-    m = re.match(r"([A-Z]+)([0-9]+)", addr)
-    if not m:
-        return None
-    col_letters, row_str = m.groups()
+def get_col_index(col_letters):
     col = 0
     for ch in col_letters:
         col = col * 26 + (ord(ch) - ord('A') + 1)
-    return (col - 1, int(row_str) - 1)
+    return col
 
-# ------------------------------------------------------------
-# Extraction brute des références (A1, A1:B5, Alias)
-# ------------------------------------------------------------
-def extract_raw_refs(formula):
-    formula = str(formula).strip()
+def addr_to_row_col(addr):
+    col_letters = get_column(addr)
+    row = get_row(addr)
+    col = get_col_index(col_letters)
+    return row, col
 
-    if not formula.startswith("="):
-        return set()
-
-    refs = set()
-
-    for r in re.findall(r"\b[A-Z]+[0-9]+\b", formula):
-        refs.add(r)
-
-    for r in re.findall(r"\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b", formula):
-        refs.add(f"{r[0]}:{r[1]}")
-
-    for r in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", formula):
-        refs.add(r)
-
-    return refs
-
-# ------------------------------------------------------------
-# Construit la map alias → adresse A1
-# ------------------------------------------------------------
-def build_alias_map(sheet):
+def build_alias_map_for_all_sheets():
     alias_map = {}
-    start, end = sheet.getUsedRange()
-    c1, r1 = addr_to_cell(start)
-    c2, r2 = addr_to_cell(end)
 
-    for r in range(r1, r2+1):
-        for c in range(c1, c2+1):
-            addr = cell_to_addr(c, r)
-            alias = sheet.getAlias(addr)
+    for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
+        sheet_name = sh.Name
+        alias_map[sheet_name] = {}
+
+        xml = sh.cells.Content
+        if not xml:
+            continue
+
+        root = ET.fromstring(xml)
+
+        for cell in root.findall("Cell"):
+            addr = cell.get("address")
+            alias = cell.get("alias")
+
             if alias:
-                alias_map[alias] = addr
+                full_ref = f"{sheet_name}.{addr}"
+                alias_map[sheet_name][alias] = full_ref
 
     return alias_map
 
-# ------------------------------------------------------------
-# Résolution alias ↔ adresse
-# ------------------------------------------------------------
-def resolve_refs(sheet, refs, alias_map):
-    resolved = set()
+def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
+    if not formula:
+        return set()
 
-    for r in refs:
-        if ":" in r:
-            resolved.add(r)
+    formula = str(formula)
+    refs = set()
+
+    # 1) Références avec label : <<Label>>.xxx
+    for r in re.findall(r"<<[^>]+>>\.[A-Za-z0-9_\.]+", formula):
+        refs.add(r)
+
+    # 2) Propriétés d'objet : Pad.Length, Sketch.Constraints[33], Pad.Placement.Base.x
+    for r in re.findall(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_\[\]]+)+", formula):
+        refs.add(r)
+
+    # 3) Cellules simples : A12, AA14
+    for r in re.findall(r"\b[A-Z]+[0-9]+\b", formula):
+        refs.add(r)
+
+    # 4) Plages : A1:B5
+    for r in re.findall(r"\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b", formula):
+        refs.add(r[0] + ":" + r[1])
+
+    # 5) 🔥 Détection des alias (Longueur, Largeur, etc.)
+    tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", formula)
+
+    sheet_aliases = alias_map.get(sheet_name, {})
+
+    for t in tokens:
+        if t in sheet_aliases:
+            refs.add(sheet_aliases[t])
+
+    return refs
+
+def ajouter_noeud_si_absent(
+    graph,
+    ref,
+    kind=None,
+    obj_name=None,
+    prop_name=None,
+    sheet_name=None,
+    cell_name=None,
+):
+    if ref not in graph:
+        graph[ref] = {
+            "ref": ref,
+            "kind": kind,
+            "object": obj_name,
+            "property": prop_name,
+            "sheet": sheet_name,
+            "cell": cell_name,
+            "value": None,
+            "formula": None,
+            "alias": None,
+            "label": None,
+            "constraint_type": None,
+            "errors": set(),
+            "parents": set(),
+            "children": set(),
+        }
+    else:
+        # 🔥 Mise à jour du kind si on découvre plus tard que c’est une cellule
+        if kind is not None and graph[ref]["kind"] != kind:
+            graph[ref]["kind"] = kind
+
+        # 🔥 Mise à jour des infos de cellule
+        if sheet_name is not None:
+            graph[ref]["sheet"] = sheet_name
+        if cell_name is not None:
+            graph[ref]["cell"] = cell_name
+
+        # 🔥 Mise à jour des infos d'objet FreeCAD
+        if obj_name is not None:
+            graph[ref]["object"] = obj_name
+        if prop_name is not None:
+            graph[ref]["property"] = prop_name
+
+
+
+def construire_label_to_name():
+    d = {}
+
+    doc = App.ActiveDocument
+    if not doc:
+        return d
+
+    # Feuilles
+    for obj in doc.Objects:
+        if obj.TypeId == "App::Spreadsheet":
+            d[obj.Label] = obj.Name
+
+    # Objets FreeCAD
+    for obj in doc.Objects:
+        d[obj.Label] = obj.Name
+
+    return d
+
+def traiter_feuille(sheet, graph, label_to_name, alias_map):
+    xml = sheet.cells.Content
+    if not xml:
+        return
+
+    root = ET.fromstring(xml)
+
+    for cell in root.findall("Cell"):
+        addr = cell.get("address")      # ex: "D4"
+        content = cell.get("content")   # ex: "=Longueur + 2"
+        alias = cell.get("alias")       # ex: "Largeur"
+
+        if not content:
             continue
 
-        if re.match(r"^[A-Z]+[0-9]+$", r):
-            resolved.add(r)
-            alias = sheet.getAlias(r)
-            if alias:
-                resolved.add(alias)
-            continue
+        # Nom canonique : datas.D4
+        cell_ref = f"{sheet.Name}.{addr}"
 
-        if r in alias_map:
-            addr = alias_map[r]
-            resolved.add(addr)
-            resolved.add(r)
-            continue
+        ajouter_noeud_si_absent(
+            graph,
+            ref=cell_ref,
+            kind="cell",
+            sheet_name=sheet.Name,
+            cell_name=addr,
+        )
 
-    return resolved
+        # --- MÉTADONNÉES ---
+        graph[cell_ref]["formula"] = content
 
-# ------------------------------------------------------------
-# Canonicalisation
-# ------------------------------------------------------------
-def canonicalize(ref, alias_map):
-    if ":" in ref:
-        return ref
-    if re.match(r"^[A-Z]+[0-9]+$", ref):
-        return ref
-    if ref in alias_map:
-        return alias_map[ref]
-    return ref
+        if graph[cell_ref]["alias"] is None:
+            graph[cell_ref]["alias"] = alias
 
-# ------------------------------------------------------------
-# Format d'affichage
-# ------------------------------------------------------------
+        if graph[cell_ref]["label"] is None or graph[cell_ref]["label"] == graph[cell_ref]["cell"]:
+            graph[cell_ref]["label"] = alias if alias else addr
+
+        graph[cell_ref]["value"] = sheet.get(addr)
 
 
-def format_ref(sheet, ref, alias_map, current_addr):
+        if content.startswith("#"):
+            graph[cell_ref]["errors"].add(content)
 
-    # --- Objet FreeCAD : Nom.Propriété (ex : Pad.Length) ---
-    m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\.(.+)", ref)
-    if m:
-        obj_name, prop = m.groups()
-        obj = App.ActiveDocument.getObject(obj_name)
-        if obj:
-            display_name = obj.Label if obj.Label else obj.Name
-            return f"{display_name}.{prop}"
+        # --- DÉPENDANCES ---
+        if content.startswith("="):
+            raw_refs = extract_raw_refs_for_graph(content, sheet.Name, alias_map)
 
-    # --- Référence inter-spreadsheet explicite : Feuille.A1 ou Feuille.Alias ---
-    m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$", ref)
-    if m:
-        sheet_name, key = m.groups()
-        other = App.ActiveDocument.getObject(sheet_name)
-        if other and other.TypeId == "Spreadsheet::Sheet":
-            display_name = other.Label if other.Label else other.Name
-            return f"{display_name}.{key}"
+            for raw in raw_refs:
+                norm = normalize_ref(raw, sheet.Name, label_to_name, alias_map)
+                if not norm:
+                    continue
 
-    # --- Plage ---
-    if ":" in ref:
-        return ref
+                ajouter_noeud_si_absent(graph, norm)
 
-    # --- Référence externe implicite : B4 mais précédé de Feuille.B4 dans la formule ---
-    if re.match(r"^[A-Z]+[0-9]+$", ref):
-        formula = sheet.getContents(current_addr)
-        m = re.search(r"([A-Za-z_][A-Za-z0-9_]*)\." + ref + r"\b", formula)
-        if m:
-            sheet_name = m.group(1)
-            other = App.ActiveDocument.getObject(sheet_name)
-            if other and other.TypeId == "Spreadsheet::Sheet":
-                display_name = other.Label if other.Label else other.Name
-                return f"{display_name}.{ref}"
+                graph[cell_ref]["parents"].add(norm)
+                graph[norm]["children"].add(cell_ref)
 
-    # --- Cellule A1 locale ---
-    if re.match(r"^[A-Z]+[0-9]+$", ref):
-        alias = sheet.getAlias(ref)
-        if alias:
-            return f"{ref} ({alias})"
-        return ref
+def traiter_objet(obj, graph, label_to_name, alias_map):
 
-    # --- Alias ---
-    if ref in alias_map:
-        addr = alias_map[ref]
-        return f"{addr} ({ref})"
+    if not hasattr(obj, "ExpressionEngine"):
+        return
 
-    # --- Autre ---
-    return ref
+    for prop, expr in obj.ExpressionEngine:
+
+        ref_obj = obj.Name + "." + prop
+
+        ajouter_noeud_si_absent(
+            graph,
+            ref=ref_obj,
+            kind="property",
+            obj_name=obj.Name,
+            prop_name=prop,
+        )
+
+        graph[ref_obj]["formula"] = expr
+        graph[ref_obj]["label"] = obj.Label
+
+        value = None
+        ctype = None
+
+        if prop.startswith("Constraints["):
+            try:
+                idx = int(prop[len("Constraints["):-1])
+                constraint = obj.Constraints[idx]
+                value = constraint.Value
+                ctype = constraint.Type
+            except:
+                value = None
+                ctype = None
+        else:
+            try:
+                value = getattr(obj, prop)
+            except:
+                value = None
+
+        graph[ref_obj]["value"] = value
+        graph[ref_obj]["constraint_type"] = ctype
+
+        # --- DÉPENDANCES ---
+        parents_bruts = extract_raw_refs_for_graph(expr, None, alias_map)
 
 
-# ------------------------------------------------------------
-# Objets FreeCAD utilisant des cellules
-# ------------------------------------------------------------
-def find_objects_using_cells(sheet, selected_addrs, alias_map):
-    used = set()
 
-    sheet_name = sheet.Name
-    sheet_label = sheet.Label
+        for p in parents_bruts:
 
-    # Capture les références complètes : datas.D6 ou <<datas>>.D6
-    pattern = rf"(?:{re.escape(sheet_name)}|<<{re.escape(sheet_label)}>>)\.([A-Za-z_][A-Za-z0-9_]*)"
+            #  Trouver la feuille correcte
+            sheet_guess = guess_sheet_from_ref(p, alias_map, label_to_name)
 
-    for obj in App.ActiveDocument.Objects:
-        if not hasattr(obj, "ExpressionEngine"):
-            continue
-
-        ee = obj.ExpressionEngine
-        if not ee:
-            continue
-
-        for prop, expr in ee:
-            if not isinstance(expr, str):
+            #  Normaliser correctement
+            p_norm = normalize_ref(p, sheet_guess, label_to_name, alias_map)
+            if not p_norm:
                 continue
 
-            # r = "D6", "D7", etc.
-            refs = re.findall(pattern, expr)
+            ajouter_noeud_si_absent(graph, p_norm)
 
-            for sel in selected_addrs:
-                # sel = "datas.D6"
-                # On extrait la partie locale : "D6"
-                local = sel.split(".")[-1]
+            graph[ref_obj]["parents"].add(p_norm)
+            graph[p_norm]["children"].add(ref_obj)
 
-                alias = sheet.getAlias(local)
+def build_graph():
+    graph = {}
 
-                for r in refs:
-                    if r == local or r == alias:
-                        used.add((sel, f"{obj.Name}.{prop}"))
-                        break
+    doc = App.ActiveDocument
+    if not doc:
+        return graph
 
-    return used
+    # 0) Construire alias_map pour toutes les feuilles
+    alias_map = build_alias_map_for_all_sheets()
+
+    # 1) Construire label_to_name
+    label_to_name = construire_label_to_name()
+
+    # 2) Parcourir tous les objets FreeCAD
+    for obj in doc.Objects:
+        traiter_objet(obj, graph, label_to_name, alias_map)
+
+    # 3) Parcourir toutes les feuilles
+    for obj in doc.Objects:
+        if obj.TypeId == "Spreadsheet::Sheet":
+            traiter_feuille(obj, graph, label_to_name, alias_map)
+
+    return graph
+
+def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
+    if not ref:
+        return None
+
+    ref = ref.strip()
+    if not ref:
+        return None
+
+    # 1) Gestion des <<label>>.xxx
+    if ref.startswith("<<"):
+        end = ref.find(">>")
+        if end != -1:
+            label = ref[2:end]
+            suffix = ref[end+2:]
+            if suffix.startswith("."):
+                suffix = suffix[1:]
+
+            # label → nom interne FreeCAD
+            name = label_to_name.get(label, label)
+
+            # On continue la normalisation
+            ref = name + "." + suffix if suffix else name
+
+    # 2) Références avec point : datas.Longueur, Pad.Length, etc.
+    if "." in ref:
+        sheet, key = ref.split(".", 1)
+
+        # 🔥 Vérifier si key est un alias
+        if sheet in alias_map:
+            if key in alias_map[sheet]:
+                return alias_map[sheet][key]   # ex: datas.D3
+
+        return ref
+
+    # 3) Alias locaux (Longueur → datas.D3)
+    if current_sheet_name in alias_map:
+        sheet_aliases = alias_map[current_sheet_name]
+        if ref in sheet_aliases:
+            return sheet_aliases[ref]
+
+    # 4) Référence locale de type D12 → datas.D12
+    if current_sheet_name is not None:
+        has_letter = any(c.isalpha() for c in ref)
+        has_digit = any(c.isdigit() for c in ref)
+        if has_letter and has_digit:
+            return current_sheet_name + "." + ref
+
+    # 5) Sinon, on renvoie tel quel
+    return ref
+
+def guess_sheet_from_ref(ref, alias_map, label_to_name):
+    # Cas <<Label>>.xxx
+    if ref.startswith("<<"):
+        end = ref.find(">>")
+        if end != -1:
+            label = ref[2:end]  # ex: datas
+            return label_to_name.get(label, label)
+
+    # Cas datas.Longueur
+    if "." in ref:
+        return ref.split(".")[0]
+
+    # Cas Longueur → chercher dans toutes les feuilles
+    for sheet, aliases in alias_map.items():
+        if ref in aliases:
+            return sheet
+
+    return None
+
+def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=None):
+    """
+    Explore récursivement le graphe à partir de ref.
+    Retourne un ensemble de nœuds atteignables selon les directions autorisées.
+    """
+    if isinstance(ref, tuple):
+
+        ref = ref[0]
+    if visited is None:
+        visited = set()
+
+    if ref in visited:
+        return visited
+
+    visited.add(ref)
+
+    # Parents
+    if allow_parents:
+        for p in graph[ref]["parents"]:
+            explore_graph(p, graph, allow_parents, allow_children, visited)
+
+    # Children
+    if allow_children:
+        for c in graph[ref]["children"]:
+            explore_graph(c, graph, allow_parents, allow_children, visited)
+
+    return visited
 
 
-
-# ------------------------------------------------------------
-# Toutes les cellules utilisées
-# ------------------------------------------------------------
-def all_cells(sheet):
-    start, end = sheet.getUsedRange()
-    c1, r1 = addr_to_cell(start)
-    c2, r2 = addr_to_cell(end)
-
-    for r in range(r1, r2 + 1):
-        for c in range(c1, c2 + 1):
-            yield cell_to_addr(c, r)
-
-# ------------------------------------------------------------
-# Boîte de dialogue
-# ------------------------------------------------------------
-class RefDialog(QtGui.QDialog):
-
-    def set_all_expanded(self, expand=True):
-        def recurse(item, level=0):
-            # Niveau 0 = racine → toujours ouverte
-            if level == 0:
-                item.setExpanded(True)
-            # Niveau 1 = sections "Utilise" / "Est utilisé par" → toujours ouvertes
-            elif level == 1:
-                item.setExpanded(True)
-            else:
-                item.setExpanded(expand)
-
-            for i in range(item.childCount()):
-                recurse(item.child(i), level + 1)
-
-        for i in range(self.tree.topLevelItemCount()):
-            recurse(self.tree.topLevelItem(i), 0)
-
-    def add_outgoing_recursive(self, parent, cell, outgoing_refs, alias_map, visited, depth=0):
-        if cell in visited:
-            return
-        visited.add(cell)
-
-        for target in sorted(outgoing_refs.get(cell, [])):
-            label = f"→ {format_ref(self.sheet, target, alias_map, cell)}"
-            label = self.enrich_label(target, label)
-
-            child = QtGui.QTreeWidgetItem(parent, [label])
-            self.set_tooltip(child, target)
-
-            # IMPORTANT : ne jamais ouvrir ici
-            child.setExpanded(False)
-
-            # récursion (UNE SEULE FOIS)
-            self.add_outgoing_recursive(child, target, outgoing_refs, alias_map, visited, depth + 1)
-
-    def add_incoming_recursive(self, parent, cell, incoming_refs, alias_map, visited, depth=0):
-        if cell in visited:
-            return
-        visited.add(cell)
-        for source in sorted(incoming_refs.get(cell, [])):
-            label = f"← {format_ref(self.sheet, source, alias_map, cell)}"
-            label = self.enrich_label(source, label)
-            child = QtGui.QTreeWidgetItem(parent, [label])
-            self.set_tooltip(child, source)
-            child.setExpanded(depth == 0)
-            self.add_incoming_recursive(child, source, incoming_refs, alias_map, visited, depth + 1)
-
+class RefDialog2(QtGui.QDialog):
     def __init__(self, sheet):
-
-        if DEBUG: print(">>> INIT CALLED")
-
-        super(RefDialog, self).__init__(FreeCADGui.getMainWindow())
+        super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
 
         self.sheet = sheet
+        self.graph = build_graph()  # Graphe complet
 
-        # --- Titre ---
-        self.setWindowTitle(tr("title"))
+        # --- Flags Qt : fenêtre devant FreeCAD mais pas devant Windows ---
+        self.setWindowFlags(
+            QtCore.Qt.Dialog
+            | QtCore.Qt.WindowTitleHint
+            | QtCore.Qt.WindowCloseButtonHint
+            | QtCore.Qt.WindowMinMaxButtonsHint
+        )
+
+        # self.setWindowModality(QtCore.Qt.NonModal)
+
+        self.setWindowTitle("Analyse des références (v2)")
         self.setMinimumWidth(400)
 
         layout = QtGui.QVBoxLayout()
 
-        # --- Ligne du haut : modes + boutons ---
+        # --- Modes ---
         top_line = QtGui.QHBoxLayout()
-
-        # Colonne de gauche : les modes
         modes_box = QtGui.QVBoxLayout()
-        self.mode_out = QtGui.QRadioButton(tr("mode_out"))
+        modes_box.setSpacing(0)  # espace vertical entre widgets
+        modes_box.setContentsMargins(0, 0, 0, 0)  # marges internes
+
         self.mode_in = QtGui.QRadioButton(tr("mode_in"))
+        self.mode_out = QtGui.QRadioButton(tr("mode_out"))
         self.mode_cross = QtGui.QRadioButton(tr("mode_cross"))
+
         self.mode_cross.setChecked(True)
 
         modes_box.addWidget(self.mode_out)
         modes_box.addWidget(self.mode_in)
         modes_box.addWidget(self.mode_cross)
+        # cases à cocher
+        self.show_formula = QtGui.QCheckBox(tr("show_formula"))
+        self.show_value = QtGui.QCheckBox(tr("show_value"))
+        modes_box.addWidget(self.show_formula)
+        modes_box.addWidget(self.show_value)
 
-        # Colonne de droite : les boutons
+        # --- Boutons ---
         right_box = QtGui.QVBoxLayout()
         right_box.setAlignment(QtCore.Qt.AlignTop)
 
@@ -426,6 +534,7 @@ class RefDialog(QtGui.QDialog):
         icon = QtGui.QApplication.style().standardIcon(QtGui.QStyle.SP_BrowserReload)
         self.btn_refresh.setIcon(icon)
         self.btn_refresh.setToolTip(tr("btn_refresh_tt"))
+
         right_box.addWidget(self.btn_refresh)
 
         self.btn_expand = QtGui.QPushButton(tr("btn_expand"))
@@ -434,64 +543,110 @@ class RefDialog(QtGui.QDialog):
         self.expanded = False
         self.btn_expand.clicked.connect(self.toggle_expand)
 
-        # Assemblage
         top_line.addLayout(modes_box)
         top_line.addLayout(right_box)
         layout.addLayout(top_line)
 
-        # --- Ligne des cases à cocher ---
-        checks_line = QtGui.QHBoxLayout()
-        self.show_formula = QtGui.QCheckBox(tr("show_formula"))
-        self.show_value = QtGui.QCheckBox(tr("show_value"))
-        checks_line.addWidget(self.show_formula)
-        checks_line.addWidget(self.show_value)
-        layout.addLayout(checks_line)
-
-        # Arbre
+        # --- Arbre ---
         self.tree = QtGui.QTreeWidget()
         self.tree.setHeaderHidden(True)
-        self.tree.setColumnCount(1)
         layout.addWidget(self.tree)
 
-        self.tree.itemClicked.connect(self.highlight)
-
         self.setLayout(layout)
-        self.setWindowFlags(
-            QtCore.Qt.Dialog
-            | QtCore.Qt.WindowTitleHint
-            | QtCore.Qt.WindowCloseButtonHint
-            | QtCore.Qt.WindowMinMaxButtonsHint
-        )
 
-        # Tooltips, palette, etc.
-        app = QtGui.QApplication.instance()
-        app.setStyle("Fusion")
-        app.setProperty("qt_delay_before_tooltip", 200)
-        QtGui.QApplication.setStyle("Fusion")
-
-        palette = QtGui.QPalette()
-        palette.setColor(QtGui.QPalette.ToolTipBase, QtGui.QColor(255, 255, 180))
-        palette.setColor(QtGui.QPalette.ToolTipText, QtGui.QColor(0, 0, 0))
-        palette.setColor(QtGui.QPalette.Window, QtGui.QColor(240, 240, 240))
-        palette.setColor(QtGui.QPalette.WindowText, QtGui.QColor(0, 0, 0))
-        QtGui.QApplication.setPalette(palette)
-
-        # Charger les réglages
-        self.load_settings()
-
-        #  1) Faire un seul recompute initial
-        self.recompute()
-
-        #  2) Connecter les signaux APRÈS le premier recompute
+        # --- Connexions ---
+        self.btn_refresh.clicked.connect(self.recompute)
         self.mode_out.toggled.connect(self.recompute)
         self.mode_in.toggled.connect(self.recompute)
         self.mode_cross.toggled.connect(self.recompute)
 
-        self.btn_refresh.clicked.connect(self.recompute)
-
         self.show_formula.stateChanged.connect(self.recompute)
         self.show_value.stateChanged.connect(self.recompute)
 
+        # --- Charger les réglages ---
+        self.load_settings()
+
+        # --- Premier affichage ---
+        self.recompute()
+
+    # --------------------------------------------------------
+    # Enrichissement du texte affiché dans l'arbre
+    # --------------------------------------------------------
+
+    def enrich_label(self, ref, node):
+        """
+        Construit le texte affiché dans l'arbre :
+        - datas(LabelDatas).D5 (Hauteur)
+        - Pad(LabelPad).Length
+        - Ajoute formule, valeur et type selon les cases cochées
+        """
+
+        # --- 1) Détection du type ---
+        kind = node.get("kind")
+
+        # --- 2) CELLULE SPREADSHEET ---
+        if kind == "cell":
+            sheet = node["sheet"]  # ex: "datas"
+            cell = node["cell"]  # ex: "D5"
+            alias = node.get("alias")
+
+            # Récupérer le label de la feuille
+            sheet_label = None
+            try:
+                sheet_obj = App.ActiveDocument.getObject(sheet)
+                if sheet_obj:
+                    sheet_label = sheet_obj.Label
+            except:
+                pass
+
+            # Construire datas(LabelDatas).D5
+            if sheet_label:
+                base = f"{sheet}({sheet_label}).{cell}"
+            else:
+                base = f"{sheet}.{cell}"
+
+            # Ajouter l’alias
+            if alias:
+                base += f" ({alias})"
+
+        # --- 3) PROPRIÉTÉ D'OBJET FREECAD ---
+        elif kind == "property":
+            obj = node["object"]  # ex: "Pad"
+            prop = node["property"]  # ex: "Length"
+            obj_label = node.get("label")
+
+            # Fallback : si label vide, utiliser le Name de l'objet
+            if not obj_label:
+                obj_label = node.get("object")  # ex: "Sketch"
+
+            # Construire Pad(LabelPad).Length
+            if obj_label:
+                base = f"{obj}({obj_label}).{prop}"
+            else:
+                base = f"{obj}.{prop}"
+
+        # --- 4) AUTRE ---
+        else:
+            base = ref
+
+        # --- 5) Ajouter formule ---
+        if self.show_formula.isChecked() and node.get("formula"):
+            base += f" — {tr('content')}: {node['formula']}"
+
+        # --- 6) Ajouter valeur ---
+        if self.show_value.isChecked() and node.get("value") is not None:
+            base += f" — {tr('value')}: {node['value']}"
+
+        # --- 7)  Ajouter type de contrainte si présent ---
+        ctype = node.get("constraint_type")
+        if ctype:
+            base += f" — {tr('type')}: {ctype}"
+
+        return base
+
+    # --------------------------------------------------------
+    # Sauvegarde / chargement INI
+    # --------------------------------------------------------
     def load_settings(self):
         if not os.path.exists(INI_PATH):
             return
@@ -500,7 +655,6 @@ class RefDialog(QtGui.QDialog):
         config.read(INI_PATH, encoding="utf-8")
         ui = config["UI"]
 
-        # --- Mode radio ---
         mode = ui.getint("mode", 3)
         self.mode_out.setChecked(mode == 1)
         self.mode_in.setChecked(mode == 2)
@@ -510,41 +664,30 @@ class RefDialog(QtGui.QDialog):
         self.show_formula.setChecked(ui.getboolean("show_formula", False))
         self.show_value.setChecked(ui.getboolean("show_value", False))
 
-        # --- Taille ---
         w = ui.getint("width", 600)
         h = ui.getint("height", 400)
         self.resize(w, h)
 
-        # --- Position sauvegardée ---
         x = ui.getint("pos_x", 100)
         y = ui.getint("pos_y", 100)
 
-        # --- Écran sauvegardé ---
         saved_screen = ui.get("screen_name", None)
-
-        # Liste des écrans disponibles
         screens = QtGui.QApplication.screens()
-
-        # Trouver l'écran correspondant
         target_screen = None
+
         if saved_screen:
             for s in screens:
                 if s.name() == saved_screen:
                     target_screen = s
                     break
 
-        # Si l'écran n'existe plus → fallback sur l'écran principal
         if not target_screen:
             target_screen = QtGui.QApplication.primaryScreen()
 
-        # Géométrie de l'écran choisi
         geo = target_screen.availableGeometry()
-
-        # Vérifier si la position sauvegardée est visible sur cet écran
         rect = QtCore.QRect(x, y, w, h)
 
         if not geo.contains(rect.center()):
-            # Recentrer proprement
             cx = geo.center().x() - w // 2
             cy = geo.center().y() - h // 2
             x, y = cx, cy
@@ -555,7 +698,6 @@ class RefDialog(QtGui.QDialog):
         config = configparser.ConfigParser()
         config["UI"] = {}
 
-        # --- Mode radio ---
         if self.mode_out.isChecked():
             mode = 1
         elif self.mode_in.isChecked():
@@ -568,19 +710,16 @@ class RefDialog(QtGui.QDialog):
         config["UI"]["show_formula"] = str(self.show_formula.isChecked())
         config["UI"]["show_value"] = str(self.show_value.isChecked())
 
-        # --- Taille ---
         size = self.size()
         config["UI"]["width"] = str(size.width())
         config["UI"]["height"] = str(size.height())
 
-        # --- Position ---
         pos = self.pos()
         config["UI"]["pos_x"] = str(pos.x())
         config["UI"]["pos_y"] = str(pos.y())
 
-        # --- Écran actuel ---
         try:
-            screen = self.screen()  # Qt5
+            screen = self.screen()
             if screen:
                 config["UI"]["screen_name"] = screen.name()
         except:
@@ -589,687 +728,120 @@ class RefDialog(QtGui.QDialog):
         with open(INI_PATH, "w", encoding="utf-8") as f:
             config.write(f)
 
-    # --------------------------------------------------------
-    # Enrichissement du texte
-    # --------------------------------------------------------
-
-    def enrich_label(self, addr, base_text):
-
-        # Si aucune case cochée → texte normal
-        if not self.show_formula.isChecked() and not self.show_value.isChecked():
-            return base_text
-
-        # --------------------------------------------------------
-        # Cas spécial : Sketch.Constraints[n]
-        # --------------------------------------------------------
-        m = re.match(r"([A-Za-z_][A-Za-z0-9_]*)\.Constraints\[(\d+)\]", addr)
-        if m:
-            obj_name, idx = m.groups()
-            obj = App.ActiveDocument.getObject(obj_name)
-
-            parts = [base_text]
-
-            # Formule (expression)
-            if self.show_formula.isChecked() and hasattr(obj, "ExpressionEngine"):
-                for p, expr in obj.ExpressionEngine:
-                    if p == f"Constraints[{idx}]":
-                        parts.append(f"{tr('expression')} : {expr}")
-                        break
-
-            # Valeur
-            if self.show_value.isChecked():
-                try:
-                    c = obj.Constraints[int(idx)]
-                    val = getattr(c, "Value", None)
-                    if val is not None:
-                        parts.append(f"{tr('value')} : {val}")
-                except:
-                    pass
-
-            return " — ".join(parts)
-
-        # --------------------------------------------------------
-        # Objet FreeCAD classique : Pad.Length, Pocket.Depth, etc.
-        # --------------------------------------------------------
-        if "." in addr and not re.match(r"^[A-Z]+[0-9]+$", addr):
-            try:
-                obj_name, prop = addr.split(".")
-                obj = App.ActiveDocument.getObject(obj_name)
-
-                if obj and hasattr(obj, "ExpressionEngine"):
-                    parts = [base_text]
-
-                    # Formule
-                    if self.show_formula.isChecked():
-                        for p, expr in obj.ExpressionEngine:
-                            if p == prop:
-                                parts.append(f"{tr('expression')} : {expr}")
-                                break
-
-                    # Valeur
-                    if self.show_value.isChecked():
-                        try:
-                            val = getattr(obj, prop)
-                            parts.append(f"{tr('value')} : {val}")
-                        except:
-                            pass
-
-                    return " — ".join(parts)
-
-            except:
-                pass
-
-            return base_text
-
-        # --------------------------------------------------------
-        # Cellule Spreadsheet A1
-        # --------------------------------------------------------
-        parts = [base_text]
-
-        # Formule
-        if self.show_formula.isChecked():
-            try:
-                formula = self.sheet.getContents(addr)
-                if formula:
-                    parts.append(f"{tr('content')} : {formula}")
-            except:
-                pass
-
-        # Valeur
-        if self.show_value.isChecked():
-            try:
-                val = self.sheet.get(addr)
-                parts.append(f"{tr('value')} : {val}")
-            except:
-                pass
-
-        return " — ".join(parts)
-
-    # --------------------------------------------------------
-    # Sélection actuelle
-    # --------------------------------------------------------
-    def get_current_selection(self):
-
-        # 🔥 Mise à jour de la feuille active
-        view = Gui.activeView()
-        if hasattr(view, "getSheet"):
-            self.sheet = view.getSheet()
-
-        sel = self.sheet.ViewObject.getView().selectedCells()
-
-        addrs = []
-
-        for item in sel:
-
-            # 🔥 Cas 1 — FreeCAD renvoie une chaîne : "D8", "D10", "D11", ...
-            if isinstance(item, str):
-                addrs.append(item)
-                continue
-
-            # Cas 2 — FreeCAD renvoie (col, row)
-            if len(item) == 2 and isinstance(item[0], int):
-                col, row = item
-                addr = cell_to_addr(col, row)
-                addrs.append(addr)
-                continue
-
-            # Cas 3 — FreeCAD renvoie ('D', 10)
-            if len(item) == 2 and isinstance(item[0], str):
-                addr = f"{item[0]}{item[1]}"
-                if DEBUG: print("→ addr str2 =", addr)
-                addrs.append(addr)
-                continue
-
-            # Cas 4 — FreeCAD renvoie un range (col1, row1, col2, row2)
-            if len(item) == 4:
-                col1, row1, col2, row2 = item
-                if DEBUG: print("→ range:", item)
-                for c in range(col1, col2 + 1):
-                    for r in range(row1, row2 + 1):
-                        addr = cell_to_addr(c, r)
-                        if DEBUG: print("   → addr range =", addr)
-                        addrs.append(addr)
-                continue
-
-        if DEBUG: print("addrs final =", addrs)
-        if DEBUG: print("============================")
-
-        return addrs
-
-    # --------------------------------------------------------
-    # Recompute
-    # --------------------------------------------------------
-    def recompute(self):
-        if DEBUG:
-            print(">>> RECOMPUTE CALLED")
-        self.setWindowTitle(f"Analyse des références – {self.sheet.Label}")
-
-        self.tree.clear()
-
-        selected_addrs = self.get_current_selection()
-
-        sel = Gui.Selection.getSelection()
-        if sel:
-            obj = sel[0]
-
-        # Si rien n'est sélectionné et qu'on n'est pas en mode CROSS → rien à faire
-        if not selected_addrs and not self.mode_cross.isChecked():
-            return
-
-        alias_map = build_alias_map(self.sheet)
-
-        # ------------------------------------------------------------
-        # MODE OUT
-        # ------------------------------------------------------------
-        if self.mode_out.isChecked():
-            refs = self.compute_outgoing(selected_addrs, alias_map)
-
-            outgoing_all, _ = self.compute_cross_references(alias_map)
-
-            outgoing_norm = {}
-            for key, targets in outgoing_all.items():
-                simple_key = key.split(".")[-1]
-                outgoing_norm[simple_key] = {t.split(".")[-1] for t in targets}
-
-            self.display_outgoing(refs, alias_map, outgoing_norm)
-            self.expanded = False
-            self.btn_expand.setText(tr("btn_expand"))
-
-        # ------------------------------------------------------------
-        # MODE IN
-        # ------------------------------------------------------------
-        elif self.mode_in.isChecked():
-            refs = self.compute_incoming(selected_addrs, alias_map)
-
-            _, incoming_all = self.compute_cross_references(alias_map)
-
-            incoming_norm = {}
-            for key, sources in incoming_all.items():
-                simple_key = key.split(".")[-1]
-                incoming_norm[simple_key] = {s.split(".")[-1] for s in sources}
-
-            self.display_incoming(refs, alias_map, incoming_norm)
-            self.expanded = False
-            self.btn_expand.setText(tr("btn_expand"))
-
-        # ------------------------------------------------------------
-        # MODE CROSS
-        # ------------------------------------------------------------
-        elif self.mode_cross.isChecked():
-            outgoing, incoming = self.compute_cross_references(alias_map)
-
-            outgoing_full = outgoing
-            incoming_full = incoming
-
-            sheet_name = self.sheet.Name
-            selected_full = [f"{sheet_name}.{addr}" for addr in selected_addrs]
-
-            selected_full = [
-                a for a in selected_full
-                if a in outgoing_full or a in incoming_full
-            ]
-
-            if not selected_full:
-                return
-
-            subset_out = {addr: outgoing_full.get(addr, set()) for addr in selected_full}
-            subset_in = {addr: incoming_full.get(addr, set()) for addr in selected_full}
-
-            subset_out_local = {
-                k.split(".")[-1]: {t.split(".")[-1] for t in v}
-                for k, v in subset_out.items()
-            }
-
-            subset_in_local = {
-                k.split(".")[-1]: {t.split(".")[-1] for t in v}
-                for k, v in subset_in.items()
-            }
-
-            # ------------------------------------------------------------
-            # Filtrage des cellules totalement vides
-            # ------------------------------------------------------------
-            def is_really_empty(full_key):
-                sheet_name, cell = full_key.split(".")
-                sh = App.ActiveDocument.getObject(sheet_name)
-
-                formula = sh.getContents(cell)
-                try:
-                    value = sh.get(cell)
-                except:
-                    value = ""
-
-                no_formula = not formula or not formula.strip()
-                no_value = (value in ("", None)) or (str(value).strip() == "")
-                no_links = (not outgoing_full.get(full_key)) and (not incoming_full.get(full_key))
-
-                return no_formula and no_value and no_links
-
-
-
-            # 1) Filtrage global
-            filtered_outgoing = {
-                k: v for k, v in outgoing_full.items()
-                if not is_really_empty(k)
-            }
-
-            filtered_incoming = {
-                k: v for k, v in incoming_full.items()
-                if not is_really_empty(k)
-            }
-
-            # 2) Normalisation locale pour la récursion
-            outgoing_norm = {
-                k.split(".")[-1]: {t.split(".")[-1] for t in v}
-                for k, v in filtered_outgoing.items()
-            }
-
-            incoming_norm = {
-                k.split(".")[-1]: {s.split(".")[-1] for s in v}
-                for k, v in filtered_incoming.items()
-            }
-
-            # 3) Filtrage des racines locales
-            subset_out_local = {
-                k: v for k, v in subset_out_local.items()
-                if not is_really_empty(f"{sheet_name}.{k}")
-            }
-
-            subset_in_local = {
-                k: v for k, v in subset_in_local.items()
-                if not is_really_empty(f"{sheet_name}.{k}")
-            }
-
-            # 4) Affichage final
-
-            self.display_cross(
-                subset_out_local,
-                subset_in_local,
-                alias_map,
-                outgoing_norm,
-                incoming_norm
-            )
-            # Remettre le bouton en mode "Déplier"
-            self.expanded = False
-            self.btn_expand.setText(tr("btn_expand"))
-
-    # --------------------------------------------------------
-    # Mode sortant
-    # --------------------------------------------------------
-
-    def compute_outgoing(self, selected_addrs, alias_map):
-        outgoing = set()
-
-        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
-            for addr, content, alias in iter_cells_from_xml(sh):
-
-                if not content or not content.startswith("="):
-                    continue
-
-                raw = extract_raw_refs(content)
-                resolved = resolve_refs(sh, raw, alias_map)
-
-                for sel in selected_addrs:
-                    if sel == addr:  # la cellule sélectionnée contient la formule
-                        for r in resolved:
-                            qualified = canonicalize(r, alias_map)
-                            outgoing.add((sel, qualified))
-                        break  # ← sortir après avoir traité toutes les références
-
-        return outgoing
-
-    # --------------------------------------------------------
-    # Mode entrant
-    # --------------------------------------------------------
-    def compute_incoming(self, selected_addrs, alias_map):
-        incoming = set()
-
-        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
-
-            for addr, content, alias in iter_cells_from_xml(sh):
-                if not content or not content.startswith("="):
-                    continue
-
-                raw = extract_raw_refs(content)
-                resolved = resolve_refs(sh, raw, alias_map)
-
-                for sel in selected_addrs:
-                    for r in resolved:
-                        canon = canonicalize(r, alias_map)
-                        if canon == sel:
-                            incoming.add((sel, f"{sh.Name}.{addr}"))
-                            break
-
-        incoming.update(find_objects_using_cells(self.sheet, selected_addrs, alias_map))
-        return incoming
-
-    # --------------------------------------------------------
-    # Références croisées
-    # --------------------------------------------------------
-    def compute_cross_references(self, alias_map):
-
-        outgoing = {}
-        incoming = {}
-
-        # 1) Initialisation pour toutes les feuilles
-        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
-            for addr in all_cells(sh):
-                key = f"{sh.Name}.{addr}"
-                outgoing[key] = set()
-                incoming[key] = set()
-
-        # 2) Analyse des formules
-        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
-            for addr in all_cells(sh):
-
-                formula = sh.getContents(addr)
-                if not formula or not formula.strip():
-                    continue
-
-                key = f"{sh.Name}.{addr}"
-
-                raw = extract_raw_refs(formula)
-                resolved = resolve_refs(sh, raw, alias_map)
-
-                for r in resolved:
-                    canon_local = canonicalize(r, alias_map)
-                    canon = f"{sh.Name}.{canon_local}"
-
-                    if canon == key:
-                        continue
-
-                    if canon not in outgoing:
-                        continue
-
-                    incoming[canon].add(key)
-                    outgoing[key].add(canon)
-
-        # 3) Analyse des objets FreeCAD
-        for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
-            for addr in all_cells(sh):
-                key = f"{sh.Name}.{addr}"
-
-                # IMPORTANT : find_objects_using_cells attend des adresses locales
-                obj_refs = find_objects_using_cells(sh, [addr], alias_map)
-
-                for _, target in obj_refs:
-                    incoming[key].add(target)
-
-        return outgoing, incoming
-
-    # --------------------------------------------------------
-    # Affichage sortant
-    # --------------------------------------------------------
-    def display_outgoing(self, refs, alias_map, outgoing_all):
-        self.tree.clear()
-        by_sel = {}
-        for sel, target in refs:
-            by_sel.setdefault(sel, set()).add(target)
-
-        for sel in sorted(by_sel.keys()):
-            alias = self.sheet.getAlias(sel)
-            title = f"{sel} ({alias})" if alias else sel
-            title = self.enrich_label(sel, title)
-
-            # 1) Créer la racine SANS l’ouvrir
-            root = QtGui.QTreeWidgetItem(self.tree, [title])
-
-            # 2) Construire toute la hiérarchie FERMÉE
-            visited = set()
-            self.add_outgoing_recursive(root, sel, outgoing_all, alias_map, visited)
-
-            # 3) Fermer tout
-            self.tree.collapseAll()
-
-            # 4) Ouvrir UNIQUEMENT la racine
-            root.setExpanded(True)
-
-    # --------------------------------------------------------
-    # Affichage entrant
-    # --------------------------------------------------------
-
-    def display_incoming(self, refs, alias_map, incoming_norm=None):
-        self.tree.clear()
-        by_sel = {}
-        for sel, source in refs:
-            by_sel.setdefault(sel, set()).add(source)
-
-        for sel in sorted(by_sel.keys()):
-            alias = self.sheet.getAlias(sel)
-            title = f"{sel} ({alias})" if alias else sel
-            title = self.enrich_label(sel, title)
-            root = QtGui.QTreeWidgetItem(self.tree, [title])
-
-            # 🔥 On ouvre seulement la racine
-            root.setExpanded(True)
-
-            # Dépendances directes
-            for source in sorted(by_sel[sel]):
-                txt = f"← {format_ref(self.sheet, source, alias_map, sel)}"
-
-                txt = self.enrich_label(source, txt)
-                child = QtGui.QTreeWidgetItem(root, [txt])
-                self.set_tooltip(child, source)
-
-                # 🔥 Tous les enfants directs restent fermés
-                child.setExpanded(False)
-
-            # 🔥 Dépendances profondes (récursion)
-            if incoming_norm:
-                def add_recursive(parent_item, addr):
-                    if addr not in incoming_norm:
-                        return
-                    for src in sorted(incoming_norm[addr]):
-                        txt = f"← {format_ref(self.sheet, src, alias_map, addr)}"
-
-                        txt = self.enrich_label(src, txt)
-                        child = QtGui.QTreeWidgetItem(parent_item, [txt])
-                        self.set_tooltip(child, src)
-
-                        # 🔥 Tous les niveaux récursifs restent fermés
-                        child.setExpanded(False)
-
-                        add_recursive(child, src)
-
-                add_recursive(root, sel)
-
-    # --------------------------------------------------------
-    # Affichage croisé
-    # --------------------------------------------------------
-    def display_cross(self, outgoing, incoming, alias_map,
-                      outgoing_norm=None, incoming_norm=None):
-
-        self.tree.clear()
-
-
-        for sel in sorted(outgoing.keys()):
-
-            # --- Racine ---
-            alias = self.sheet.getAlias(sel)
-            title = f"{sel} ({alias})" if alias else sel
-            title = self.enrich_label(sel, title)
-
-            root = QtGui.QTreeWidgetItem(self.tree, [title])
-            root.setExpanded(True)
-
-            # ============================================================
-            #  OUTGOING  (Utilisées par sel)
-            # ============================================================
-
-            out_parent = QtGui.QTreeWidgetItem(root, [tr("uses")])
-
-            out_parent.setExpanded(True)
-
-            # --- Niveau direct ---
-            direct_out = sorted(outgoing.get(sel, []))
-            children_by_addr = {}
-
-            for tgt in direct_out:
-                txt = f"→ {format_ref(self.sheet, tgt, alias_map, sel)}"
-                txt = self.enrich_label(tgt, txt)
-
-                child = QtGui.QTreeWidgetItem(out_parent, [txt])
-                self.set_tooltip(child, tgt)
-                child.setExpanded(False)
-                children_by_addr[tgt] = child  # on mémorise le QTreeWidgetItem
-
-            # --- Récursion OUTGOING ---
-            if outgoing_norm:
-                visited_out = set()
-
-                def add_out_recursive(parent_item, addr):
-                    if addr in visited_out:
-                        return
-                    visited_out.add(addr)
-
-                    if addr not in outgoing_norm:
-                        return
-
-                    for tgt in sorted(outgoing_norm[addr]):
-                        #  éviter doublon : ne pas réafficher le niveau direct
-                        if tgt in direct_out:
-                            continue
-
-                        txt = f"→ {format_ref(self.sheet, tgt, alias_map, addr)}"
-                        txt = self.enrich_label(tgt, txt)
-
-                        child = QtGui.QTreeWidgetItem(parent_item, [txt])
-                        self.set_tooltip(child, tgt)
-                        child.setExpanded(False)
-
-                        add_out_recursive(child, tgt)
-
-                #  On part des enfants directs, mais sous LEUR propre nœud
-                for tgt in direct_out:
-                    child = children_by_addr[tgt]
-                    add_out_recursive(child, tgt)
-
-            # ============================================================
-            #  INCOMING  (Utilisant sel)
-            # ============================================================
-
-            in_parent  = QtGui.QTreeWidgetItem(root, [tr("used_by")])
-
-            in_parent.setExpanded(True)
-
-            # --- Niveau direct ---
-            direct_in = sorted(incoming.get(sel, []))
-            children_by_addr_in = {}
-
-            for src in direct_in:
-                txt = f"← {format_ref(self.sheet, src, alias_map, sel)}"
-
-                txt = self.enrich_label(src, txt)
-                child = QtGui.QTreeWidgetItem(in_parent, [txt])
-                self.set_tooltip(child, src)
-                child.setExpanded(False)
-                children_by_addr_in[src] = child
-
-            # --- Récursion INCOMING ---
-            if incoming_norm:
-                visited_in = set()
-
-                def add_in_recursive(parent_item, addr):
-                    if addr in visited_in:
-                        return
-                    visited_in.add(addr)
-
-                    if addr not in incoming_norm:
-                        return
-
-                    for src in sorted(incoming_norm[addr]):
-                        if src in direct_in:
-                            continue
-
-                        txt = f"← {format_ref(self.sheet, src, alias_map, addr)}"
-
-                        txt = self.enrich_label(src, txt)
-                        child = QtGui.QTreeWidgetItem(parent_item, [txt])
-                        self.set_tooltip(child, src)
-                        child.setExpanded(False)
-
-                        add_in_recursive(child, src)
-
-                # On part des enfants directs, sous LEUR nœud
-                for src in direct_in:
-                    child = children_by_addr_in[src]
-                    add_in_recursive(child, src)
-
-    # --------------------------------------------------------
-    # Tooltip
-    # --------------------------------------------------------
-    def set_tooltip(self, item, target):
-        # --- Cas 1 : Cellule Spreadsheet A1 ---
-        if re.match(r"^[A-Z]+[0-9]+$", target):
-            formula = self.sheet.getContents(target)
-            if formula:
-                item.setToolTip(0, f"{tr('content_of')} {target} : {formula}")
-            return
-
-        # --- Cas 2 : Objet FreeCAD (Pad.Length, Sketch.Constraints[n], etc.) ---
-        try:
-            obj_name, prop = target.split(".")
-            obj = App.ActiveDocument.getObject(obj_name)
-            if obj and hasattr(obj, "ExpressionEngine"):
-                for p, expr in obj.ExpressionEngine:
-                    if p == prop:
-                        item.setToolTip(0, f"{tr('expression_of')} {target} : {expr}")
-                        return
-        except:
-            pass
-
-    # --------------------------------------------------------
-    # Highlight
-    # --------------------------------------------------------
-    def highlight(self, item, column):
-        text = item.text(0)
-
-        if "→" in text:
-            part = text.split("→", 1)[1].strip()
-        elif "←" in text:
-            part = text.split("←", 1)[1].strip()
-        else:
-            return
-
-        target = part.split(" ")[0]
-
-        if "." in target and not re.match(r"^[A-Z]+[0-9]+$", target):
-            Gui.Selection.clearSelection()
-            try:
-                obj_name, prop = target.split(".")
-                Gui.Selection.addSelection(App.ActiveDocument.Name, obj_name)
-            except:
-                pass
-            return
-
-        if re.match(r"^[A-Z]+[0-9]+$", target):
-            self.sheet.setBackground(target, (1,1,0,1))
-            App.ActiveDocument.recompute()
-
-
     def closeEvent(self, event):
         self.save_settings()
         super().closeEvent(event)
 
+    # --------------------------------------------------------
+    # RECOMPUTE
+    # --------------------------------------------------------
+    def recompute(self):
+        try:
+            view = FreeCADGui.ActiveDocument.ActiveView
+            self.sheet = view.getSheet()
+        except:
+            return  # pas de feuille active → rien à faire
+        self.setWindowTitle(f"Analyse des références – {self.sheet.Label}")
+
+        self.tree.clear()
+
+        selected = self.sheet.ViewObject.getView().selectedCells()
+        if not selected:
+            return
+
+        addrs = []
+        for item in selected:
+            if isinstance(item, str):
+                addrs.append(item)
+            elif len(item) == 2:
+                addrs.append(cell_to_addr(item[0], item[1]))
+
+        roots = [f"{self.sheet.Name}.{a}" for a in addrs if f"{self.sheet.Name}.{a}" in self.graph]
+        if not roots:
+            return
+
+        for root in roots:
+            self.build_tree(root)
+
+    # --------------------------------------------------------
+    # BUILD TREE
+    # --------------------------------------------------------
+
+    def add_in_recursive(self, parent_item, ref, reachable):
+        for p in sorted(self.graph[ref]["parents"]):
+            if p in reachable:
+                node = self.graph[p]
+                item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(p, node)])
+                item.setToolTip(0, f"{tr('formula')}: {node['formula']}\n{tr('value')}: {node['value']}")
+                # récursion
+                self.add_in_recursive(item, p, reachable)
+
+    def add_out_recursive(self, parent_item, ref, reachable):
+        for c in sorted(self.graph[ref]["children"]):
+            if c in reachable:
+                node = self.graph[c]
+                item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
+                item.setToolTip(0, f"{tr('content')}: {node['formula']}\n{tr('value')}: {node['value']}")
+
+                # Déplier seulement le premier niveau
+                #if parent_item.parent() is not None and parent_item.parent().parent() is None:
+                #    item.setExpanded(True)
+
+                # récursion
+                self.add_out_recursive(item, c, reachable)
+
+    def build_tree(self, root):
+        root_item = QtGui.QTreeWidgetItem(
+            self.tree,
+            [self.enrich_label(root, self.graph[root])]
+        )
+
+        node = self.graph[root]
+        formula = node.get("formula")
+        value = node.get("value")
+
+        tooltip = ""
+
+        if formula:
+            tooltip += f"{tr('content')}: {formula}"
+        if value is not None:
+            tooltip += f"\n{tr('value')}: {value}"
+
+        root_item.setToolTip(0, tooltip.strip())
+
+        root_item.setExpanded(True)
+
+        allow_parents = self.mode_out.isChecked() or self.mode_cross.isChecked()
+        allow_children = self.mode_in.isChecked() or self.mode_cross.isChecked()
+
+        reachable = explore_graph(root, self.graph, allow_parents, allow_children)
+
+        # IN section (récursif)
+        if allow_parents:
+            in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses")] )
+            in_item.setExpanded(True)
+            self.add_in_recursive(in_item, root, reachable)
+
+        if allow_children:
+            out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by")])
+            out_item.setExpanded(True)
+            self.add_out_recursive(out_item, root, reachable)
+
+    # --------------------------------------------------------
+    # EXPAND / COLLAPSE
+    # --------------------------------------------------------
     def toggle_expand(self):
         self.expanded = not self.expanded
-
-        if self.expanded:
-            # 🔥 Déplier = comme avant, ne pas toucher
-            self.set_all_expanded(True)
-            self.btn_expand.setText("Replier")
-        else:
-            # 🔥 Replier = structure intelligente (comme après un recalcul)
-            self.recompute()
-            self.btn_expand.setText("Déplier")
-
-    def set_all_expanded(self, expand=True):
-        def recurse(item):
-            item.setExpanded(expand)
+        def rec(item):
+            item.setExpanded(self.expanded)
             for i in range(item.childCount()):
-                recurse(item.child(i))
-
+                rec(item.child(i))
         for i in range(self.tree.topLevelItemCount()):
-            recurse(self.tree.topLevelItem(i))
+            rec(self.tree.topLevelItem(i))
+
+        self.btn_expand.setText(
+            tr("btn_collapse") if self.expanded else tr("btn_expand")
+        )
 
 
 # ------------------------------------------------------------
@@ -1286,5 +858,65 @@ if sheet is None:
                               "Sélectionnez des cellules dans un Spreadsheet.")
 else:
     QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
-    dlg = RefDialog(sheet)
-    dlg.show()
+    dlg = RefDialog2(sheet)
+    dlg.show()   # surtout pas dlg.exec()
+
+
+
+print("RESULTAT FINAL")
+print("=== CELLULES ===")
+g = build_graph() # uniquement pour les prints. A retirer si on retire les prints
+print("=== DEBUG KEYS ===")
+for k in g.keys():
+    print("KEY:", k, "TYPE:", type(k))
+print("=== DEBUG CHILDREN TYPES ===")
+for k, node in g.items():
+    for c in node["children"]:
+        print("CHILD OF", k, "=", c, "TYPE:", type(c))
+print("=== DEBUG PARENTS TYPES ===")
+for k, node in g.items():
+    for p in node["parents"]:
+        print("PARENT OF", k, "=", p, "TYPE:", type(p))
+
+"""
+for ref, node in g.items():
+    if node["kind"] == "cell":
+        print(
+            ref,
+            "| label:", node["label"],
+            "| value:", node["value"],
+            "| formula:", node["formula"],
+            "| alias:", node["alias"],
+            "| parents:", node["parents"],
+        )
+
+print("=== PROPRIETES ===")
+for ref, node in g.items():
+    if node["kind"] == "property":
+        print(
+            ref,
+            "| label:", node["label"],
+            "| object:", node["object"],
+            "| property:", node["property"],
+            "| value:", node["value"],
+            "| type:", node["constraint_type"],
+            "| formula:", node["formula"],
+            "| parents:", node["parents"],
+        )
+
+
+print("=== TEST explore_graph ===")
+# ref = "datas.D5"   # par exemple
+ref=Gui.ActiveDocument.ActiveView.getSheet().Label + '.' + Gui.activeView().currentIndex()
+if isinstance(ref, tuple):
+    ref = ref[0]
+
+nodes_out = explore_graph(ref, g, allow_parents=False, allow_children=True)
+nodes_in  = explore_graph(ref, g, allow_parents=True,  allow_children=False)
+nodes_cross = explore_graph(ref, g, allow_parents=True, allow_children=True)
+
+print("OUT :", nodes_out)
+print("IN  :", nodes_in)
+print("CROSS :", nodes_cross)
+"""
+
