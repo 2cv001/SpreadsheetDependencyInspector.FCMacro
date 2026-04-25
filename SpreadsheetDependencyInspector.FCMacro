@@ -305,6 +305,9 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
         return
 
     for prop, expr in obj.ExpressionEngine:
+        # FreeCAD renvoie parfois ".Placement.Base.x" → on retire le. du départ
+        if prop.startswith("."):
+            prop = prop[1:]
 
         ref_obj = obj.Name + "." + prop
 
@@ -861,7 +864,7 @@ else:
     dlg = RefDialog2(sheet)
     dlg.show()   # surtout pas dlg.exec()
 
-
+"""
 
 print("RESULTAT FINAL")
 print("=== CELLULES ===")
@@ -877,7 +880,7 @@ print("=== DEBUG PARENTS TYPES ===")
 for k, node in g.items():
     for p in node["parents"]:
         print("PARENT OF", k, "=", p, "TYPE:", type(p))
-
+"""
 """
 for ref, node in g.items():
     if node["kind"] == "cell":
