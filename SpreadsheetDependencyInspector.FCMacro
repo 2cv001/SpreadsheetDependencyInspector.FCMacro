@@ -53,7 +53,7 @@ TRANSLATIONS = {
         # Boutons
         "btn_expand": "Déplier / Replier",
         "btn_collapse": "Replier / Déplier",
-        "btn_refresh_tt": "Mettre à jour",
+        "btn_refresh_tt": "Relancer l’analyse (suite à un changement de sélection, une modification du spreadsheet…)",
 
         # Cases à cocher
         "show_formula": "Afficher la formule dans la ligne",
@@ -82,7 +82,7 @@ TRANSLATIONS = {
         # Boutons
         "btn_expand": "Expand / Collapse",
         "btn_collapse": "Collapse / Expand",
-        "btn_refresh_tt": "Refresh",
+        "btn_refresh_tt": "Re-run analysis (after a selection change or a spreadsheet modification…)",
 
         # Cases à cocher
         "show_formula": "Show formula in line",
