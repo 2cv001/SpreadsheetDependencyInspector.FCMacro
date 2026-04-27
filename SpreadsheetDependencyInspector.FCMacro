@@ -739,6 +739,7 @@ class RefDialog2(QtGui.QDialog):
     # RECOMPUTE
     # --------------------------------------------------------
     def recompute(self):
+        self.graph = build_graph()
         try:
             view = FreeCADGui.ActiveDocument.ActiveView
             self.sheet = view.getSheet()
