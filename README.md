@@ -10,8 +10,12 @@ The macro is multilingual, currently supporting English and French.
 The language used is the one you selected in your FreeCAD preferences.
 <img width="691" height="610" alt="image" src="https://github.com/user-attachments/assets/592382bf-0311-4a7f-9f5d-70d422b5e32f" />
 
-**Usage:**  
+**Usage:** 
+
 Select one or several cells, then run the macro. Choose the information you want to display.
+
+The refresh button <img width="36" height="30" alt="image" src="https://github.com/user-attachments/assets/dcc1fc5e-25ed-461c-87eb-7176b053d575" />  recalculates the analysis, for example after you modify a cell or change the selection.
+The expand/collapse button lets you expand or collapse the whole tree. You can also do it branch by branch by clicking on the ▶ or ▼ symbols.
 
 
 **Français**
@@ -27,6 +31,11 @@ La langues est celle que vous avez choisi dans les préférences de FreeCAD
 
 
 **Mode d'utilisation :** 
+
 Sélectionnez une ou plusieurs cellules, puis lancez la macro. Sélectionner les informations que vous souhaitez voir.
+
+Le bouton refresh <img width="36" height="30" alt="image" src="https://github.com/user-attachments/assets/131cef95-d078-475c-a95c-97890e5dc68f" />
+ permet de relancer le calcul lorsque par exemple vous avez modifié une cellule ou changé la sélection.
+Le bouton déplier/replier permet de dépplieer / replier l'arbre. Il est aussi possible de le faire branche par branche en cliquant sur les ▶ ou ▼
 
 
