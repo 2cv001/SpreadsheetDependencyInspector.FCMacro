@@ -1,4 +1,4 @@
-# SpreadsheetDependencyInspector2.FCMacro
+# SpreadsheetDependencyInspector.FCMacro
 
 import xml.etree.ElementTree as ET
 import re
