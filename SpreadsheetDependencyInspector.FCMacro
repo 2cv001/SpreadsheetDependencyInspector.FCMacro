@@ -1,4 +1,4 @@
-# SpreadsheetDependencyInspector.FCMacro
+# SpreadsheetDependencyInspector2.FCMacro
 
 import xml.etree.ElementTree as ET
 import re
@@ -11,6 +11,10 @@ INI_FILENAME = "SpreadsheetDependencyInspector.ini"
 # Chemin complet vers le fichier INI
 MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
 INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
+# Niveau utilisé par le bouton "Tout replier"
+DEFAULT_COLLAPSE_LEVEL = 2
+
+
 
 
 
@@ -51,9 +55,10 @@ TRANSLATIONS = {
         "mode_cross": "Références croisées complètes",
 
         # Boutons
-        "btn_expand": "Déplier / Replier",
-        "btn_collapse": "Replier / Déplier",
+        "btn_expand": "Tout déplier",
+        "btn_collapse": "Tout replier",
         "btn_refresh_tt": "Relancer l’analyse (suite à un changement de sélection, une modification du spreadsheet…)",
+        "level_prefix": "Niveau: ",
 
         # Cases à cocher
         "show_formula": "Afficher la formule dans la ligne",
@@ -80,9 +85,10 @@ TRANSLATIONS = {
         "mode_cross": "Full cross‑references",
 
         # Boutons
-        "btn_expand": "Expand / Collapse",
-        "btn_collapse": "Collapse / Expand",
+        "btn_expand": "Expand all",
+        "btn_collapse": "Collapse all",
         "btn_refresh_tt": "Re-run analysis (after a selection change or a spreadsheet modification…)",
+        "level_prefix": "Level: ",
 
         # Cases à cocher
         "show_formula": "Show formula in line",
@@ -223,7 +229,6 @@ def ajouter_noeud_si_absent(
             graph[ref]["object"] = obj_name
         if prop_name is not None:
             graph[ref]["property"] = prop_name
-
 
 
 def construire_label_to_name():
@@ -500,8 +505,6 @@ class RefDialog2(QtGui.QDialog):
             | QtCore.Qt.WindowMinMaxButtonsHint
         )
 
-        # self.setWindowModality(QtCore.Qt.NonModal)
-
         self.setWindowTitle("Analyse des références (v2)")
         self.setMinimumWidth(400)
 
@@ -510,8 +513,8 @@ class RefDialog2(QtGui.QDialog):
         # --- Modes ---
         top_line = QtGui.QHBoxLayout()
         modes_box = QtGui.QVBoxLayout()
-        modes_box.setSpacing(0)  # espace vertical entre widgets
-        modes_box.setContentsMargins(0, 0, 0, 0)  # marges internes
+        modes_box.setSpacing(0)
+        modes_box.setContentsMargins(0, 0, 0, 0)
 
         self.mode_in = QtGui.QRadioButton(tr("mode_in"))
         self.mode_out = QtGui.QRadioButton(tr("mode_out"))
@@ -522,30 +525,61 @@ class RefDialog2(QtGui.QDialog):
         modes_box.addWidget(self.mode_out)
         modes_box.addWidget(self.mode_in)
         modes_box.addWidget(self.mode_cross)
+
         # cases à cocher
         self.show_formula = QtGui.QCheckBox(tr("show_formula"))
         self.show_value = QtGui.QCheckBox(tr("show_value"))
         modes_box.addWidget(self.show_formula)
         modes_box.addWidget(self.show_value)
 
-        # --- Boutons ---
+        # --- Boutons (colonne de droite) ---
         right_box = QtGui.QVBoxLayout()
         right_box.setAlignment(QtCore.Qt.AlignTop)
 
+        # Bouton Rafraîchir
         self.btn_refresh = QtGui.QPushButton()
         self.btn_refresh.setMaximumWidth(32)
         icon = QtGui.QApplication.style().standardIcon(QtGui.QStyle.SP_BrowserReload)
         self.btn_refresh.setIcon(icon)
         self.btn_refresh.setToolTip(tr("btn_refresh_tt"))
-
         right_box.addWidget(self.btn_refresh)
 
-        self.btn_expand = QtGui.QPushButton(tr("btn_expand"))
-        self.btn_expand.setMaximumWidth(120)
-        right_box.addWidget(self.btn_expand)
-        self.expanded = False
-        self.btn_expand.clicked.connect(self.toggle_expand)
+        # Bouton Déplier
+        self.btn_expand_all = QtGui.QPushButton(tr("btn_expand"))
+        self.btn_expand_all.setMaximumWidth(120)
+        right_box.addWidget(self.btn_expand_all)
 
+        # SpinBox pour le niveau
+        self.level_spin = QtGui.QSpinBox()
+        self.level_spin.setMinimum(0)
+        self.level_spin.setMaximum(10)
+        self.level_spin.setValue(DEFAULT_COLLAPSE_LEVEL)
+        self.level_spin.setPrefix(tr(tr("level_prefix")))
+        self.level_spin.setMaximumWidth(120)
+
+        self._last_valid_level = DEFAULT_COLLAPSE_LEVEL  # mémorise la dernière valeur correcte
+
+        self._last_valid_level = DEFAULT_COLLAPSE_LEVEL
+
+
+
+        right_box.addWidget(self.level_spin)
+
+        # Bouton Replier
+        self.btn_collapse_all = QtGui.QPushButton(tr("btn_collapse"))
+        self.btn_collapse_all.setMaximumWidth(120)
+        right_box.addWidget(self.btn_collapse_all)
+
+        # Connexions des boutons
+        self.btn_expand_all.clicked.connect(self.expand_all)
+        self.btn_collapse_all.clicked.connect(self.collapse_all)
+
+        # Mise à jour dynamique du niveau
+        self.level_spin.valueChanged.connect(
+            lambda v: self.set_expand_level(v)
+        )
+
+        # Assemblage du haut
         top_line.addLayout(modes_box)
         top_line.addLayout(right_box)
         layout.addLayout(top_line)
@@ -745,6 +779,7 @@ class RefDialog2(QtGui.QDialog):
             self.sheet = view.getSheet()
         except:
             return  # pas de feuille active → rien à faire
+
         self.setWindowTitle(f"Analyse des références – {self.sheet.Label}")
 
         self.tree.clear()
@@ -764,8 +799,16 @@ class RefDialog2(QtGui.QDialog):
         if not roots:
             return
 
+        # Construction de l'arbre
         for root in roots:
             self.build_tree(root)
+
+        # Déplier automatiquement jusqu'au premier niveau réel
+        # 0 = racine
+        # 1 = sections (Uses / Used by)
+        # 2 = premier niveau réel
+        self.set_expand_level(self.level_spin.value())
+
 
     # --------------------------------------------------------
     # BUILD TREE
@@ -787,10 +830,6 @@ class RefDialog2(QtGui.QDialog):
                 item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
                 item.setToolTip(0, f"{tr('content')}: {node['formula']}\n{tr('value')}: {node['value']}")
 
-                # Déplier seulement le premier niveau
-                #if parent_item.parent() is not None and parent_item.parent().parent() is None:
-                #    item.setExpanded(True)
-
                 # récursion
                 self.add_out_recursive(item, c, reachable)
 
@@ -805,15 +844,13 @@ class RefDialog2(QtGui.QDialog):
         value = node.get("value")
 
         tooltip = ""
-
         if formula:
             tooltip += f"{tr('content')}: {formula}"
         if value is not None:
             tooltip += f"\n{tr('value')}: {value}"
 
         root_item.setToolTip(0, tooltip.strip())
-
-        root_item.setExpanded(True)
+        root_item.setExpanded(True)  # La racine est toujours dépliée
 
         allow_parents = self.mode_out.isChecked() or self.mode_cross.isChecked()
         allow_children = self.mode_in.isChecked() or self.mode_cross.isChecked()
@@ -822,30 +859,74 @@ class RefDialog2(QtGui.QDialog):
 
         # IN section (récursif)
         if allow_parents:
-            in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses")] )
-            in_item.setExpanded(True)
+            in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses")])
             self.add_in_recursive(in_item, root, reachable)
+            # Pas de setExpanded ici — géré par set_expand_level()
 
+        # OUT section (récursif)
         if allow_children:
             out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by")])
-            out_item.setExpanded(True)
             self.add_out_recursive(out_item, root, reachable)
+            # Pas de setExpanded ici — géré par set_expand_level()
+
+    def set_expand_level(self, level):
+        print("level", level)
+        def rec(item, depth):
+            # Déplier si on est dans la profondeur autorisée
+            item.setExpanded(depth < level)
+
+            # Parcours des enfants
+            for i in range(item.childCount()):
+                rec(item.child(i), depth + 1)
+
+        # Appliquer à chaque racine
+        for i in range(self.tree.topLevelItemCount()):
+            rec(self.tree.topLevelItem(i), 0)
 
     # --------------------------------------------------------
     # EXPAND / COLLAPSE
     # --------------------------------------------------------
-    def toggle_expand(self):
-        self.expanded = not self.expanded
+    """
+    def expand_all(self):
         def rec(item):
-            item.setExpanded(self.expanded)
+            item.setExpanded(True)
             for i in range(item.childCount()):
                 rec(item.child(i))
+
         for i in range(self.tree.topLevelItemCount()):
             rec(self.tree.topLevelItem(i))
+    """
+    def expand_all(self):
+        def rec(item, depth):
+            item.setExpanded(True)
+            max_depth = depth
+            for i in range(item.childCount()):
+                d = rec(item.child(i), depth + 1)
+                if d > max_depth:
+                    max_depth = d
+            return max_depth
 
-        self.btn_expand.setText(
-            tr("btn_collapse") if self.expanded else tr("btn_expand")
-        )
+        # Calculer la profondeur max sur toutes les racines
+        max_depth = 0
+        for i in range(self.tree.topLevelItemCount()):
+            d = rec(self.tree.topLevelItem(i), 1)  # profondeur racine = 1
+            if d > max_depth:
+                max_depth = d
+
+        # Mettre à jour le spinbox sans déclencher le callback
+        self.level_spin.blockSignals(True)
+        self.level_spin.setValue(max_depth - 1)
+        self.level_spin.blockSignals(False)
+
+        # Mettre à jour la mémoire interne plus utilisé
+        # self._last_valid_level = max_depth
+
+    def collapse_all(self):
+        # Replier selon le niveau par défaut
+        self.set_expand_level(DEFAULT_COLLAPSE_LEVEL)
+
+        # Synchroniser le SpinBox
+        self.level_spin.setValue(DEFAULT_COLLAPSE_LEVEL)
 
 
 # ------------------------------------------------------------
@@ -864,63 +945,4 @@ else:
     QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
     dlg = RefDialog2(sheet)
     dlg.show()   # surtout pas dlg.exec()
-
-"""
-
-print("RESULTAT FINAL")
-print("=== CELLULES ===")
-g = build_graph() # uniquement pour les prints. A retirer si on retire les prints
-print("=== DEBUG KEYS ===")
-for k in g.keys():
-    print("KEY:", k, "TYPE:", type(k))
-print("=== DEBUG CHILDREN TYPES ===")
-for k, node in g.items():
-    for c in node["children"]:
-        print("CHILD OF", k, "=", c, "TYPE:", type(c))
-print("=== DEBUG PARENTS TYPES ===")
-for k, node in g.items():
-    for p in node["parents"]:
-        print("PARENT OF", k, "=", p, "TYPE:", type(p))
-"""
-"""
-for ref, node in g.items():
-    if node["kind"] == "cell":
-        print(
-            ref,
-            "| label:", node["label"],
-            "| value:", node["value"],
-            "| formula:", node["formula"],
-            "| alias:", node["alias"],
-            "| parents:", node["parents"],
-        )
-
-print("=== PROPRIETES ===")
-for ref, node in g.items():
-    if node["kind"] == "property":
-        print(
-            ref,
-            "| label:", node["label"],
-            "| object:", node["object"],
-            "| property:", node["property"],
-            "| value:", node["value"],
-            "| type:", node["constraint_type"],
-            "| formula:", node["formula"],
-            "| parents:", node["parents"],
-        )
-
-
-print("=== TEST explore_graph ===")
-# ref = "datas.D5"   # par exemple
-ref=Gui.ActiveDocument.ActiveView.getSheet().Label + '.' + Gui.activeView().currentIndex()
-if isinstance(ref, tuple):
-    ref = ref[0]
-
-nodes_out = explore_graph(ref, g, allow_parents=False, allow_children=True)
-nodes_in  = explore_graph(ref, g, allow_parents=True,  allow_children=False)
-nodes_cross = explore_graph(ref, g, allow_parents=True, allow_children=True)
-
-print("OUT :", nodes_out)
-print("IN  :", nodes_in)
-print("CROSS :", nodes_cross)
-"""
 
