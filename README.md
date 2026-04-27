@@ -11,3 +11,9 @@ La macro affiche pour une sélection de cellules, les dépendances entre les cel
 - les deux
   
 <img width="691" height="610" alt="image" src="https://github.com/user-attachments/assets/592382bf-0311-4a7f-9f5d-70d422b5e32f" />
+
+The macro is multilingual, currently supporting English and French.
+The language used is the one you selected in your FreeCAD preferences.
+
+La macro est multilangues, pour l"instant anglais/ français
+La langues est celle que vous avez choisi dans les préférences de FreeCAD
