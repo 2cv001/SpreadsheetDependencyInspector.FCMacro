@@ -9,5 +9,5 @@ La macro affiche pour une sélection de cellules, les dépendances entre les cel
 - les cellule qui utilisent d'autres cellules
 - les cellules qui sont utilisées par d'autres cellules
 - les deux
-- 
+  
 <img width="691" height="610" alt="image" src="https://github.com/user-attachments/assets/592382bf-0311-4a7f-9f5d-70d422b5e32f" />
