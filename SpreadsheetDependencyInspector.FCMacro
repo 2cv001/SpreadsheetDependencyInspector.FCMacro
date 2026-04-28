@@ -577,7 +577,7 @@ class RefDialog2(QtGui.QDialog):
 
         # SpinBox pour le niveau
         self.level_spin = QtGui.QSpinBox()
-        self.level_spin.setMinimum(0)
+        self.level_spin.setMinimum(1)
         self.level_spin.setMaximum(10)
         self.level_spin.setValue(INITIAL_LEVEL)
         self.level_spin.setPrefix(tr(tr("level_prefix")))
@@ -892,25 +892,29 @@ class RefDialog2(QtGui.QDialog):
     def set_expand_level(self, level):
     #  Applique un niveau d'expansion à l'arbre.
         # le niveau 1 n'a pas d'intéret, on le saute.
+        """
         if level == 1:
             if self.last_level > level:
                 level = 0
             else :
                 level = 2
+
             self.level_spin.blockSignals(True)
             self.level_spin.setValue(level)
             self.level_spin.blockSignals(False)
-
+        """
         self.last_level = level
 
         def rec(item, depth):
             # Déplier si on est dans la profondeur autorisée
-            item.setExpanded(depth < level)
+            if level == 1 or level == 0:
+                item.setExpanded(depth < level - 1)
+            else:
+                item.setExpanded(depth < level)
 
             # Parcours des enfants
             for i in range(item.childCount()):
                 rec(item.child(i), depth + 1)
-
         # Appliquer à chaque racine
         for i in range(self.tree.topLevelItemCount()):
             rec(self.tree.topLevelItem(i), 0)
