@@ -6,9 +6,10 @@ __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
 __Date__ = "2026/04/28 11:35"  # YYYY/MM/DD
 __Version__ = __Date__
-__Icon__ = "https://wiki.freecad.org/File:SpreadsheetDependencyInspector.png"
+__Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/SpreadsheetDependencyInspector"
 __License__ = "Apache-2.0"
+# https://wiki.freecad.org/File:SpreadsheetDependencyInspector.png
 
 import xml.etree.ElementTree as ET
 import re
@@ -16,7 +17,7 @@ from PySide import QtGui, QtCore
 import configparser
 
 
-# Nom du fichier INI (en dur)
+# Nom du fichier INI
 INI_FILENAME = "SpreadsheetDependencyInspector.ini"
 # Chemin complet vers le fichier INI
 MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -800,7 +801,8 @@ class RefDialog2(QtGui.QDialog):
         except:
             return  # pas de feuille active → rien à faire
 
-        self.setWindowTitle(f"Analyse des références – {self.sheet.Label}")
+        self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
+
 
         self.tree.clear()
 
