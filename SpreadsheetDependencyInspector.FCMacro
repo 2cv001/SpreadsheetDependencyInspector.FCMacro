@@ -1,4 +1,14 @@
-# SpreadsheetDependencyInspector2.FCMacro
+# SpreadsheetDependencyInspector.FCMacro
+
+__Name__ = "Spreadsheet Dependency Inspector"
+__Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
+__Author__ = "2cv001"
+__Title__ = "Spreadsheet Dependency Inspector"
+__Date__ = "2026/04/28 11:35"  # YYYY/MM/DD
+__Version__ = __Date__
+__Icon__ = "https://wiki.freecad.org/File:SpreadsheetDependencyInspector.png"
+__Wiki__ = "https://wiki.freecad.org/SpreadsheetDependencyInspector"
+__License__ = "Apache-2.0"
 
 import xml.etree.ElementTree as ET
 import re
