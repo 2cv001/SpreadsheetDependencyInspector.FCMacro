@@ -12,9 +12,9 @@ INI_FILENAME = "SpreadsheetDependencyInspector.ini"
 MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
 INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
 # Niveau utilisé par le bouton "Tout replier"
-DEFAULT_COLLAPSE_LEVEL = 2
-
-
+DEFAULT_COLLAPSE_LEVEL = 0
+# Niveau initial au lancement de la macro
+INITIAL_LEVEL = 2
 
 
 
@@ -494,6 +494,11 @@ class RefDialog2(QtGui.QDialog):
     def __init__(self, sheet):
         super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
 
+
+        self.last_level = 0
+
+
+
         self.sheet = sheet
         self.graph = build_graph()  # Graphe complet
 
@@ -553,14 +558,11 @@ class RefDialog2(QtGui.QDialog):
         self.level_spin = QtGui.QSpinBox()
         self.level_spin.setMinimum(0)
         self.level_spin.setMaximum(10)
-        self.level_spin.setValue(DEFAULT_COLLAPSE_LEVEL)
+        self.level_spin.setValue(INITIAL_LEVEL)
         self.level_spin.setPrefix(tr(tr("level_prefix")))
         self.level_spin.setMaximumWidth(120)
 
-        self._last_valid_level = DEFAULT_COLLAPSE_LEVEL  # mémorise la dernière valeur correcte
-
-        self._last_valid_level = DEFAULT_COLLAPSE_LEVEL
-
+        #self._last_valid_level = DEFAULT_COLLAPSE_LEVEL  # mémorise la dernière valeur correcte
 
 
         right_box.addWidget(self.level_spin)
@@ -575,9 +577,7 @@ class RefDialog2(QtGui.QDialog):
         self.btn_collapse_all.clicked.connect(self.collapse_all)
 
         # Mise à jour dynamique du niveau
-        self.level_spin.valueChanged.connect(
-            lambda v: self.set_expand_level(v)
-        )
+        self.level_spin.valueChanged.connect(self.set_expand_level)
 
         # Assemblage du haut
         top_line.addLayout(modes_box)
@@ -809,11 +809,9 @@ class RefDialog2(QtGui.QDialog):
         # 2 = premier niveau réel
         self.set_expand_level(self.level_spin.value())
 
-
     # --------------------------------------------------------
     # BUILD TREE
     # --------------------------------------------------------
-
     def add_in_recursive(self, parent_item, ref, reachable):
         for p in sorted(self.graph[ref]["parents"]):
             if p in reachable:
@@ -870,7 +868,19 @@ class RefDialog2(QtGui.QDialog):
             # Pas de setExpanded ici — géré par set_expand_level()
 
     def set_expand_level(self, level):
-        print("level", level)
+    #  Applique un niveau d'expansion à l'arbre.
+        # le niveau 1 n'a pas d'intéret, on le saute.
+        if level == 1:
+            if self.last_level > level:
+                level = 0
+            else :
+                level = 2
+            self.level_spin.blockSignals(True)
+            self.level_spin.setValue(level)
+            self.level_spin.blockSignals(False)
+
+        self.last_level = level
+
         def rec(item, depth):
             # Déplier si on est dans la profondeur autorisée
             item.setExpanded(depth < level)
@@ -886,16 +896,6 @@ class RefDialog2(QtGui.QDialog):
     # --------------------------------------------------------
     # EXPAND / COLLAPSE
     # --------------------------------------------------------
-    """
-    def expand_all(self):
-        def rec(item):
-            item.setExpanded(True)
-            for i in range(item.childCount()):
-                rec(item.child(i))
-
-        for i in range(self.tree.topLevelItemCount()):
-            rec(self.tree.topLevelItem(i))
-    """
     def expand_all(self):
         def rec(item, depth):
             item.setExpanded(True)
@@ -917,9 +917,6 @@ class RefDialog2(QtGui.QDialog):
         self.level_spin.blockSignals(True)
         self.level_spin.setValue(max_depth - 1)
         self.level_spin.blockSignals(False)
-
-        # Mettre à jour la mémoire interne plus utilisé
-        # self._last_valid_level = max_depth
 
     def collapse_all(self):
         # Replier selon le niveau par défaut
