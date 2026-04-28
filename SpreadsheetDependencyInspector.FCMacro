@@ -84,6 +84,11 @@ TRANSLATIONS = {
         "expression": "expression",
         "value": "valeur",
         "content": "contenu",
+
+        # Divers
+        "error_title": "Erreur",
+        "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
+
     },
 
     "en": {
@@ -115,6 +120,11 @@ TRANSLATIONS = {
         "expression": "expression",
         "value": "value",
         "content": "content",
+
+        #Divers
+        "error_title": "Error",
+        "error_select_cells": "Select cells in a Spreadsheet.",
+
     }
 }
 
@@ -946,8 +956,12 @@ except:
     sheet = None
 
 if sheet is None:
-    QtGui.QMessageBox.warning(None, "Erreur",
-                              "Sélectionnez des cellules dans un Spreadsheet.")
+    QtGui.QMessageBox.warning(
+        None,
+        tr("error_title"),
+        tr("error_select_cells")
+    )
+
 else:
     QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
     dlg = RefDialog2(sheet)
