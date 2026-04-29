@@ -515,50 +515,50 @@ class RefDialog2(QtGui.QDialog):
     def __init__(self, sheet):
         super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
 
-
         self.last_level = 0
-
-
-
         self.sheet = sheet
-        self.graph = build_graph()  # Graphe complet
+        self.graph = build_graph()
 
-        # --- Flags Qt : fenêtre devant FreeCAD mais pas devant Windows ---
+        # --- Flags Qt ---
         self.setWindowFlags(
-            QtCore.Qt.Dialog
-            | QtCore.Qt.WindowTitleHint
-            | QtCore.Qt.WindowCloseButtonHint
-            | QtCore.Qt.WindowMinMaxButtonsHint
+            QtCore.Qt.Dialog |
+            QtCore.Qt.WindowTitleHint |
+            QtCore.Qt.WindowCloseButtonHint |
+            QtCore.Qt.WindowMinMaxButtonsHint
         )
-
-        self.setWindowTitle("Analyse des références (v2)")
+        self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
         self.setMinimumWidth(400)
 
         layout = QtGui.QVBoxLayout()
 
-        # --- Modes ---
+        # ============================================================
+        #  MODES : remplacés par 2 cases à cocher
+        # ============================================================
         top_line = QtGui.QHBoxLayout()
         modes_box = QtGui.QVBoxLayout()
         modes_box.setSpacing(0)
         modes_box.setContentsMargins(0, 0, 0, 0)
 
-        self.mode_in = QtGui.QRadioButton(tr("mode_in"))
-        self.mode_out = QtGui.QRadioButton(tr("mode_out"))
-        self.mode_cross = QtGui.QRadioButton(tr("mode_cross"))
+        # ✔ OUT : cellules utilisées dans la formule
+        self.cb_out = QtGui.QCheckBox(tr("mode_out"))
+        self.cb_out.setChecked(True)
 
-        self.mode_cross.setChecked(True)
+        # ✔ IN : cellules utilisant la cellule sélectionnée
+        self.cb_in = QtGui.QCheckBox(tr("mode_in"))
+        self.cb_in.setChecked(True)
 
-        modes_box.addWidget(self.mode_out)
-        modes_box.addWidget(self.mode_in)
-        modes_box.addWidget(self.mode_cross)
+        modes_box.addWidget(self.cb_out)
+        modes_box.addWidget(self.cb_in)
 
-        # cases à cocher
+        # --- Cases à cocher supplémentaires ---
         self.show_formula = QtGui.QCheckBox(tr("show_formula"))
         self.show_value = QtGui.QCheckBox(tr("show_value"))
         modes_box.addWidget(self.show_formula)
         modes_box.addWidget(self.show_value)
 
-        # --- Boutons (colonne de droite) ---
+        # ============================================================
+        #  Colonne de droite (boutons)
+        # ============================================================
         right_box = QtGui.QVBoxLayout()
         right_box.setAlignment(QtCore.Qt.AlignTop)
 
@@ -575,17 +575,13 @@ class RefDialog2(QtGui.QDialog):
         self.btn_expand_all.setMaximumWidth(120)
         right_box.addWidget(self.btn_expand_all)
 
-        # SpinBox pour le niveau
+        # SpinBox niveau
         self.level_spin = QtGui.QSpinBox()
         self.level_spin.setMinimum(1)
         self.level_spin.setMaximum(10)
         self.level_spin.setValue(INITIAL_LEVEL)
-        self.level_spin.setPrefix(tr(tr("level_prefix")))
+        self.level_spin.setPrefix(tr("level_prefix"))
         self.level_spin.setMaximumWidth(120)
-
-        #self._last_valid_level = DEFAULT_COLLAPSE_LEVEL  # mémorise la dernière valeur correcte
-
-
         right_box.addWidget(self.level_spin)
 
         # Bouton Replier
@@ -593,38 +589,42 @@ class RefDialog2(QtGui.QDialog):
         self.btn_collapse_all.setMaximumWidth(120)
         right_box.addWidget(self.btn_collapse_all)
 
-        # Connexions des boutons
-        self.btn_expand_all.clicked.connect(self.expand_all)
-        self.btn_collapse_all.clicked.connect(self.collapse_all)
-
-        # Mise à jour dynamique du niveau
-        self.level_spin.valueChanged.connect(self.set_expand_level)
-
         # Assemblage du haut
         top_line.addLayout(modes_box)
         top_line.addLayout(right_box)
         layout.addLayout(top_line)
 
-        # --- Arbre ---
+        # ============================================================
+        #  Arbre
+        # ============================================================
         self.tree = QtGui.QTreeWidget()
         self.tree.setHeaderHidden(True)
         layout.addWidget(self.tree)
 
         self.setLayout(layout)
 
-        # --- Connexions ---
+        # ============================================================
+        #  Connexions
+        # ============================================================
         self.btn_refresh.clicked.connect(self.recompute)
-        self.mode_out.toggled.connect(self.recompute)
-        self.mode_in.toggled.connect(self.recompute)
-        self.mode_cross.toggled.connect(self.recompute)
+        self.btn_expand_all.clicked.connect(self.expand_all)
+        self.btn_collapse_all.clicked.connect(self.collapse_all)
+        self.level_spin.valueChanged.connect(self.set_expand_level)
 
+        # ✔ NOUVEAU : connexions des 2 cases à cocher
+        self.cb_out.toggled.connect(self.recompute)
+        self.cb_in.toggled.connect(self.recompute)
+
+        # Cases à cocher existantes
         self.show_formula.stateChanged.connect(self.recompute)
         self.show_value.stateChanged.connect(self.recompute)
 
-        # --- Charger les réglages ---
+        # ============================================================
+        #  Charger les réglages
+        # ============================================================
         self.load_settings()
 
-        # --- Premier affichage ---
+        # Premier affichage
         self.recompute()
 
     # --------------------------------------------------------
@@ -713,10 +713,9 @@ class RefDialog2(QtGui.QDialog):
         config.read(INI_PATH, encoding="utf-8")
         ui = config["UI"]
 
-        mode = ui.getint("mode", 3)
-        self.mode_out.setChecked(mode == 1)
-        self.mode_in.setChecked(mode == 2)
-        self.mode_cross.setChecked(mode == 3)
+        # --- Cases à cocher OUT / IN ---
+        self.cb_out.setChecked(ui.getboolean("show_out", True))
+        self.cb_in.setChecked(ui.getboolean("show_in", True))
 
         # --- Cases à cocher ---
         self.show_formula.setChecked(ui.getboolean("show_formula", False))
@@ -756,26 +755,25 @@ class RefDialog2(QtGui.QDialog):
         config = configparser.ConfigParser()
         config["UI"] = {}
 
-        if self.mode_out.isChecked():
-            mode = 1
-        elif self.mode_in.isChecked():
-            mode = 2
-        else:
-            mode = 3
-        config["UI"]["mode"] = str(mode)
+        # --- Cases à cocher OUT / IN ---
+        config["UI"]["show_out"] = str(self.cb_out.isChecked())
+        config["UI"]["show_in"] = str(self.cb_in.isChecked())
 
-        # --- Cases à cocher ---
+        # --- Cases à cocher existantes ---
         config["UI"]["show_formula"] = str(self.show_formula.isChecked())
         config["UI"]["show_value"] = str(self.show_value.isChecked())
 
+        # --- Taille ---
         size = self.size()
         config["UI"]["width"] = str(size.width())
         config["UI"]["height"] = str(size.height())
 
+        # --- Position ---
         pos = self.pos()
         config["UI"]["pos_x"] = str(pos.x())
         config["UI"]["pos_y"] = str(pos.y())
 
+        # --- Écran ---
         try:
             screen = self.screen()
             if screen:
@@ -783,6 +781,7 @@ class RefDialog2(QtGui.QDialog):
         except:
             pass
 
+        # --- Écriture du fichier ---
         with open(INI_PATH, "w", encoding="utf-8") as f:
             config.write(f)
 
@@ -872,8 +871,8 @@ class RefDialog2(QtGui.QDialog):
         root_item.setToolTip(0, tooltip.strip())
         root_item.setExpanded(True)  # La racine est toujours dépliée
 
-        allow_parents = self.mode_out.isChecked() or self.mode_cross.isChecked()
-        allow_children = self.mode_in.isChecked() or self.mode_cross.isChecked()
+        allow_parents = self.cb_out.isChecked()
+        allow_children = self.cb_in.isChecked()
 
         reachable = explore_graph(root, self.graph, allow_parents, allow_children)
 
