@@ -92,7 +92,7 @@ TRANSLATIONS = {
         "error_title": "Erreur",
         "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
         "sketch_not_open_title": "Sketch non ouvert",
-        "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l'arbre sur ",
+        "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
 
 
     },
@@ -133,7 +133,7 @@ TRANSLATIONS = {
         "error_title": "Error",
         "error_select_cells": "Select cells in a Spreadsheet.",
         "sketch_not_open_title": "Sketch not open",
-        "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the tree on ",
+        "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
 
 
     }
