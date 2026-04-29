@@ -61,9 +61,11 @@ TRANSLATIONS = {
         "title": "Analyse des références (Spreadsheet + Objets FreeCAD)",
 
         # Modes
-        "mode_out": "Cellule sélectionnée → Cellules utilisées dans la formule",
-        "mode_in": "Cellule sélectionnée → Cellules l'utilisant dans leur formule",
-        "mode_cross": "Références croisées complètes",
+        # "mode_out": "Cellule sélectionnée → Cellules utilisées dans la formule",
+        # "mode_in": "Cellule sélectionnée → Cellules l'utilisant dans leur formule",
+        "mode_out": "Utilise",
+        "mode_in": "Est utilisé par",
+        # "mode_cross": "Références croisées complètes",
 
         # Boutons
         "btn_expand": "Tout déplier",
@@ -96,9 +98,11 @@ TRANSLATIONS = {
         "title": "Reference analysis (Spreadsheet + FreeCAD objects)",
 
         # Modes
-        "mode_out": "Selected cell → Cells used in its formula",
-        "mode_in": "Selected cell → Cells referencing it",
-        "mode_cross": "Full cross‑references",
+        # "mode_out": "Selected cell → Cells used in its formula",
+        # "mode_in": "Selected cell → Cells referencing it",
+        "mode_out": "Uses",
+        "mode_in": "Used by",
+        # "mode_cross": "Full cross‑references",
 
         # Boutons
         "btn_expand": "Expand all",
@@ -905,22 +909,12 @@ class RefDialog2(QtGui.QDialog):
             if d > max_depth:
                 max_depth = d
 
-        return max_depth-1
+        # On décale de 1, mais on ne descend jamais sous 1
+        return max(1, max_depth - 1)
 
     def set_expand_level(self, level):
     #  Applique un niveau d'expansion à l'arbre.
-        # le niveau 1 n'a pas d'intéret, on le saute.
-        """
-        if level == 1:
-            if self.last_level > level:
-                level = 0
-            else :
-                level = 2
 
-            self.level_spin.blockSignals(True)
-            self.level_spin.setValue(level)
-            self.level_spin.blockSignals(False)
-        """
         self.last_level = level
 
         def rec(item, depth):
