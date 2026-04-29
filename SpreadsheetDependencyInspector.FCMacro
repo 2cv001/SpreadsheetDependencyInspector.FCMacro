@@ -15,6 +15,8 @@ import xml.etree.ElementTree as ET
 import re
 from PySide import QtGui, QtCore
 import configparser
+import FreeCAD as App
+import FreeCADGui as Gui
 
 
 # Nom du fichier INI
@@ -217,6 +219,32 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
             refs.add(sheet_aliases[t])
 
     return refs
+
+
+
+def openSketchInEditMode(sketch):
+    """
+    Ouvre un sketch en mode édition.
+    Retourne :
+        True  → ouverture OK
+        False → aucune vue 3D ouverte ou ouverture impossible
+    """
+
+    if sketch is None:
+        return False
+
+    # Vérifier si une vue 3D existe réellement dans le document
+    views3d = Gui.ActiveDocument.mdiViewsOfType("Gui::View3DInventor")
+    if not views3d:
+        return False
+
+    # Tenter d'ouvrir le sketch
+    try:
+        Gui.ActiveDocument.setEdit(sketch)
+        return True
+    except Exception:
+        return False
+
 
 def ajouter_noeud_si_absent(
     graph,
@@ -1015,19 +1043,26 @@ class RefDialog2(QtGui.QDialog):
         sketch = doc.getObject(sketch_name)
 
         # Vérifier si un objet est déjà en édition
+        # Vérifier si un objet est déjà en édition
         vp = Gui.ActiveDocument.getInEdit()
 
-        # Si aucun sketch n'est en édition → avertir l'utilisateur
+        # Si aucun sketch n'est en édition → tenter ouverture auto SI vue 3D existe
         if vp is None or vp.Object.Name != sketch_name:
-            # Retrouver le label utilisateur depuis le nom interne
-            # label = next((lbl for lbl, name in self.sketch_dict.items() if name == sketch_name), sketch_name)
 
-            QtGui.QMessageBox.warning(
-                None,
-                tr("sketch_not_open_title"),
-                tr("sketch_not_open_msg") + sketch_name
-            )
-            return
+            # Tentative d'ouverture automatique du sketch
+            opened = openSketchInEditMode(sketch)
+
+            if opened:
+                # Le sketch a été ouvert automatiquement → on continue
+                vp = Gui.ActiveDocument.getInEdit()
+            else:
+                # Aucune vue 3D → on NE demande rien de plus
+                QtGui.QMessageBox.warning(
+                    None,
+                    tr("sketch_not_open_title"),
+                    tr("sketch_not_open_msg") + sketch_name
+                )
+                return
 
         # Trouver le conteneur (Body ou rien)
         body = sketch.getParentGeoFeatureGroup() if hasattr(sketch, "getParentGeoFeatureGroup") else None
