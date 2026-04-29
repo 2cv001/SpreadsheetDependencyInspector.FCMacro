@@ -802,9 +802,7 @@ class RefDialog2(QtGui.QDialog):
 
         self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
 
-
         self.tree.clear()
-
         selected = self.sheet.ViewObject.getView().selectedCells()
         if not selected:
             return
@@ -824,10 +822,15 @@ class RefDialog2(QtGui.QDialog):
         for root in roots:
             self.build_tree(root)
 
+        # Ajuster la limite du SpinBox selon la profondeur réelle
+        depth = self.get_tree_depth()
+        self.level_spin.setMaximum(depth)
+
+        # Si la valeur actuelle dépasse la profondeur, on la corrige
+        if self.level_spin.value() > depth:
+            self.level_spin.setValue(depth)
+
         # Déplier automatiquement jusqu'au premier niveau réel
-        # 0 = racine
-        # 1 = sections (Uses / Used by)
-        # 2 = premier niveau réel
         self.set_expand_level(self.level_spin.value())
 
     # --------------------------------------------------------
@@ -887,6 +890,22 @@ class RefDialog2(QtGui.QDialog):
             out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by")])
             self.add_out_recursive(out_item, root, reachable)
             # Pas de setExpanded ici — géré par set_expand_level()
+
+    def get_tree_depth(self):
+        """Retourne la profondeur maximale de l'arbre affiché."""
+
+        def depth_of(item):
+            if item.childCount() == 0:
+                return 1
+            return 1 + max(depth_of(item.child(i)) for i in range(item.childCount()))
+
+        max_depth = 1
+        for i in range(self.tree.topLevelItemCount()):
+            d = depth_of(self.tree.topLevelItem(i))
+            if d > max_depth:
+                max_depth = d
+
+        return max_depth-1
 
     def set_expand_level(self, level):
     #  Applique un niveau d'expansion à l'arbre.
