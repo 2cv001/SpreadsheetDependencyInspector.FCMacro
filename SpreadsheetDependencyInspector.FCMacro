@@ -23,7 +23,7 @@ INI_FILENAME = "SpreadsheetDependencyInspector.ini"
 MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
 INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
 # Niveau utilisé par le bouton "Tout replier"
-DEFAULT_COLLAPSE_LEVEL = 0
+DEFAULT_COLLAPSE_LEVEL = 1
 # Niveau initial au lancement de la macro
 INITIAL_LEVEL = 2
 
