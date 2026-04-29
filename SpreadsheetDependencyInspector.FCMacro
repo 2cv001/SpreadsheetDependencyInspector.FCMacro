@@ -611,6 +611,9 @@ class RefDialog2(QtGui.QDialog):
         #  Arbre
         # ============================================================
         self.tree = QtGui.QTreeWidget()
+        self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._onTreeContextMenu)
+
         self.tree.setHeaderHidden(True)
         layout.addWidget(self.tree)
 
@@ -854,6 +857,16 @@ class RefDialog2(QtGui.QDialog):
             if p in reachable:
                 node = self.graph[p]
                 item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(p, node)])
+
+                # Si c’est une contrainte FreeCAD
+                if node["kind"] == "property" and node["property"].startswith("Constraints["):
+                    try:
+                        idx = int(node["property"][len("Constraints["):-1])
+                        item.setData(0, QtCore.Qt.UserRole + 1, node["object"])  # nom du sketch
+                        item.setData(0, QtCore.Qt.UserRole + 2, idx)  # index de contrainte
+                    except:
+                        pass
+
                 item.setToolTip(0, f"{tr('formula')}: {node['formula']}\n{tr('value')}: {node['value']}")
                 # récursion
                 self.add_in_recursive(item, p, reachable)
@@ -863,6 +876,15 @@ class RefDialog2(QtGui.QDialog):
             if c in reachable:
                 node = self.graph[c]
                 item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
+
+                if node["kind"] == "property" and node["property"].startswith("Constraints["):
+                    try:
+                        idx = int(node["property"][len("Constraints["):-1])
+                        item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
+                        item.setData(0, QtCore.Qt.UserRole + 2, idx)
+                    except:
+                        pass
+
                 item.setToolTip(0, f"{tr('content')}: {node['formula']}\n{tr('value')}: {node['value']}")
 
                 # récursion
@@ -940,8 +962,6 @@ class RefDialog2(QtGui.QDialog):
         for i in range(self.tree.topLevelItemCount()):
             rec(self.tree.topLevelItem(i), 0)
 
-
-
     # --------------------------------------------------------
     # EXPAND / COLLAPSE
     # --------------------------------------------------------
@@ -973,6 +993,100 @@ class RefDialog2(QtGui.QDialog):
 
         # Synchroniser le SpinBox
         self.level_spin.setValue(DEFAULT_COLLAPSE_LEVEL)
+
+    # --------------------------------------------------------
+    # Double-clic dans l'arbre : sélectionner contrainte + focus Spreadsheet
+    # --------------------------------------------------------
+    def onTreeRightClick(self, item, column):
+        print(">>> onTreeRightClick CALLED")
+
+        # Récupérer les infos stockées dans l'item
+        sketch_name = item.data(0, QtCore.Qt.UserRole + 1)
+        constraint_index = item.data(0, QtCore.Qt.UserRole + 2)
+
+        print("sketch_name =", sketch_name, "constraint_index =", constraint_index)
+
+        if sketch_name is None or constraint_index is None:
+            return  # Ce n'est pas une contrainte
+
+        doc = App.ActiveDocument
+        sketch = doc.getObject(sketch_name)
+
+        # 1) Vérifier que le sketch est en mode édition
+        # 1) Ouvrir le sketch en mode édition Sketcher
+        Gui.activateWorkbench("SketcherWorkbench")
+        Gui.ActiveDocument.setEdit(sketch_name, 1)
+
+        # 2) Vérifier à nouveau
+        vp = Gui.ActiveDocument.getInEdit()
+        if vp is None or vp.Object.Name != sketch_name:
+            QtGui.QMessageBox.warning(
+                None,
+                "Sketch non actif",
+                "Impossible d'ouvrir le sketch en mode édition."
+            )
+            return
+
+        # 1) Ouvrir le sketch en édition (donne aussi le focus)
+        Gui.ActiveDocument.setEdit(sketch_name)
+
+        sketch = doc.getObject(sketch_name)
+
+        # Chercher un conteneur de type Body / PartDesign
+        body = None
+        if hasattr(sketch, "getParentGeoFeatureGroup"):
+            body = sketch.getParentGeoFeatureGroup()
+
+        if body:
+            container_name = body.Name
+        else:
+            # Pas de Body : on sélectionne directement sur le sketch
+            container_name = sketch_name
+
+
+        # 2) Sélectionner la contrainte
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(
+            doc.Name,
+            container_name,
+            f"{sketch_name}.Constraint{constraint_index + 1}"
+        )
+
+        # 3) Redonner le focus au Spreadsheet
+        self.restoreSpreadsheetFocus()
+
+    def _onTreeContextMenu(self, pos):
+        print(">>> _onTreeContextMenu", pos)
+
+        item = self.tree.itemAt(pos)
+        print("    item =", item)
+        print("TEXT =", item.text(0))
+        print("CHILD COUNT =", item.childCount())
+        print("DATA1 =", item.data(0, QtCore.Qt.UserRole + 1))
+        print("DATA2 =", item.data(0, QtCore.Qt.UserRole + 2))
+
+        if item is None:
+            return
+
+        # Appel direct de ta fonction renommée
+        self.onTreeRightClick(item, 0)
+
+    # ---------------------------------------------------------
+    # Vérifie si un sketch est en mode édition
+    # ---------------------------------------------------------
+    def isSketchInEdit(self, sketch):
+        vp = Gui.ActiveDocument.getInEdit()
+        return vp is not None and hasattr(vp, "Object") and vp.Object == sketch
+
+    # ---------------------------------------------------------
+    # Redonne le focus au Spreadsheet actif
+    # ---------------------------------------------------------
+    def restoreSpreadsheetFocus(self):
+        mw = Gui.getMainWindow()
+        for w in mw.findChildren(QtGui.QWidget):
+            if w.metaObject().className() == "SpreadsheetGui::SheetView":
+                w.setFocus()
+                return
 
 
 # ------------------------------------------------------------
