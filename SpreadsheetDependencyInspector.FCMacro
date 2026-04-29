@@ -91,6 +91,9 @@ TRANSLATIONS = {
         # Divers
         "error_title": "Erreur",
         "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
+        "sketch_not_open_title": "Sketch non ouvert",
+        "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l'arbre sur ",
+
 
     },
 
@@ -129,6 +132,9 @@ TRANSLATIONS = {
         #Divers
         "error_title": "Error",
         "error_select_cells": "Select cells in a Spreadsheet.",
+        "sketch_not_open_title": "Sketch not open",
+        "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the tree on ",
+
 
     }
 }
@@ -1013,10 +1019,13 @@ class RefDialog2(QtGui.QDialog):
 
         # Si aucun sketch n'est en édition → avertir l'utilisateur
         if vp is None or vp.Object.Name != sketch_name:
+            # Retrouver le label utilisateur depuis le nom interne
+            # label = next((lbl for lbl, name in self.sketch_dict.items() if name == sketch_name), sketch_name)
+
             QtGui.QMessageBox.warning(
                 None,
-                "Sketch non ouvert",
-                "Ouvrez d'abord le sketch en mode édition (double‑clic dans l'arbre)."
+                tr("sketch_not_open_title"),
+                tr("sketch_not_open_msg") + sketch_name
             )
             return
 
@@ -1036,14 +1045,8 @@ class RefDialog2(QtGui.QDialog):
         self.restoreSpreadsheetFocus()
 
     def _onTreeContextMenu(self, pos):
-        print(">>> _onTreeContextMenu", pos)
 
         item = self.tree.itemAt(pos)
-        print("    item =", item)
-        print("TEXT =", item.text(0))
-        print("CHILD COUNT =", item.childCount())
-        print("DATA1 =", item.data(0, QtCore.Qt.UserRole + 1))
-        print("DATA2 =", item.data(0, QtCore.Qt.UserRole + 2))
 
         if item is None:
             return
