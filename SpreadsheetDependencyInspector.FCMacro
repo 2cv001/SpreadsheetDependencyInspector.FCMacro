@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/04/30 08:21"  # YYYY/MM/DD
+__Date__ = "2026/04/30 16:35"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -74,9 +74,9 @@ TRANSLATIONS = {
         "level_prefix": "Niveau: ",
 
         # Cases à cocher
-        "show_formula": "Contenu",
-        "show_value": "Valeur",
-        "show_names": "Nom",
+        "show_formula": "Contenus",
+        "show_value": "Valeurs",
+        "show_names": "Noms",
         "show_labels_alias": "Labels et alias",
         "show_constraint_types": "Types de contrainte",
 
@@ -118,11 +118,11 @@ TRANSLATIONS = {
         "level_prefix": "Level: ",
 
         # Cases à cocher
-        "show_formula": "Content",
-        "show_value": "Value",
+        "show_formula": "Contents",
+        "show_value": "Values",
         "show_names": "Names",
-        "show_labels_alias": "Show labels and aliases",
-        "show_constraint_types": "Show constraint types",
+        "show_labels_alias": "labels and aliases",
+        "show_constraint_types": "Constraint types",
 
 
         # Sections arbre
