@@ -1184,7 +1184,7 @@ class RefDialog2(QtGui.QDialog):
             self.add_out_recursive(item, c, reachable, root_ref)
 
     def build_tree(self, root):
-        self.tree.clear()
+        # self.tree.clear()
 
         # ------------------------------------------------------------
         # 1) Filtrage de la racine
