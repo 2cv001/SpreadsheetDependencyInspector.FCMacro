@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/04/30 16:35"  # YYYY/MM/DD
+__Date__ = "2026/04/30 21:22"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -74,11 +74,17 @@ TRANSLATIONS = {
         "level_prefix": "Niveau: ",
 
         # Cases à cocher
+        "middle_group": "Vus dans la ligne",
         "show_formula": "Contenus",
         "show_value": "Valeurs",
+        "filter_cells": "Cellules",
+        "filter_constraints": "Contraintes",
+        "filter_others": "Autres",
+
         "show_names": "Noms",
         "show_labels_alias": "Labels et alias",
         "show_constraint_types": "Types de contrainte",
+        "lines_shown": "Lignes vues",
 
         # Sections arbre
         "uses": "Utilise",
@@ -97,7 +103,7 @@ TRANSLATIONS = {
         "sketch_not_open_title": "Sketch non ouvert",
         "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
         "hint_constraint": "Clic droit pour voir et sélectionner la contrainte",
-
+        "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
 
     },
 
@@ -118,11 +124,17 @@ TRANSLATIONS = {
         "level_prefix": "Level: ",
 
         # Cases à cocher
+        "lines_shown": "Shown lines",
         "show_formula": "Contents",
         "show_value": "Values",
+        "filter_cells": "Cells",
+        "filter_constraints": "Constraints",
+        "filter_others": "Others",
+
         "show_names": "Names",
         "show_labels_alias": "labels and aliases",
         "show_constraint_types": "Constraint types",
+        "middle_group": "Shown in line",
 
 
         # Sections arbre
@@ -143,7 +155,7 @@ TRANSLATIONS = {
         "sketch_not_open_title": "Sketch not open",
         "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
         "hint_constraint": "Right‑click to view and select the constraint",
-
+        "spreadsheet_not_active": "The Spreadsheet must be the active window.",
 
     }
 }
@@ -586,12 +598,16 @@ class RefDialog2(QtGui.QDialog):
         layout = QtGui.QVBoxLayout()
 
         # ============================================================
-        #  MODES : remplacés par 2 cases à cocher
+        #  LIGNES VUES : OUT/IN + filtres
         # ============================================================
         top_line = QtGui.QHBoxLayout()
+
+        group_lines = QtGui.QGroupBox(tr("lines_shown"))
         modes_box = QtGui.QVBoxLayout()
+        group_lines.setLayout(modes_box)
+
         modes_box.setSpacing(0)
-        modes_box.setContentsMargins(0, 0, 0, 0)
+        modes_box.setContentsMargins(5, 5, 5, 5)
 
         # ✔ OUT : cellules utilisées dans la formule
         self.cb_out = QtGui.QCheckBox(tr("mode_out"))
@@ -604,29 +620,48 @@ class RefDialog2(QtGui.QDialog):
         modes_box.addWidget(self.cb_out)
         modes_box.addWidget(self.cb_in)
 
-        # --- Cases à cocher supplémentaires ---
+        # --- Filtres Cellules / Contraintes / Autres ---
+        self.filter_cells = QtGui.QCheckBox(tr("filter_cells"))
+        self.filter_constraints = QtGui.QCheckBox(tr("filter_constraints"))
+        self.filter_others = QtGui.QCheckBox(tr("filter_others"))
+
+        self.filter_cells.setChecked(True)
+        self.filter_constraints.setChecked(True)
+        self.filter_others.setChecked(True)
+
+        modes_box.addWidget(self.filter_cells)
+        modes_box.addWidget(self.filter_constraints)
+        modes_box.addWidget(self.filter_others)
+
+        # Connexions (une seule fois)
+        self.filter_cells.stateChanged.connect(self.recompute)
+        self.filter_constraints.stateChanged.connect(self.recompute)
+        self.filter_others.stateChanged.connect(self.recompute)
+
+        # Ajout du groupe dans la fenêtre
+        top_line.addWidget(group_lines)
+
+        # ============================================================
+        #  Colonne du milieu : options d'affichage
+        # ============================================================
         self.show_formula = QtGui.QCheckBox(tr("show_formula"))
         self.show_value = QtGui.QCheckBox(tr("show_value"))
-
-        # ============================================================
-        #  Colonne du milieu
-        #  Cases à cocher supplémentaires (noms, labels/alias, types)
-        # ============================================================
-        extra_box = QtGui.QVBoxLayout()
-        extra_box.setSpacing(0)
-        extra_box.setContentsMargins(10, 0, 10, 0)
-
-        # self.show_names = QtGui.QCheckBox(tr("show_names"))
         self.show_labels_alias = QtGui.QCheckBox(tr("show_labels_alias"))
         self.show_constraint_types = QtGui.QCheckBox(tr("show_constraint_types"))
 
-        extra_box.addWidget(self.show_labels_alias)
-        extra_box.addWidget(self.show_formula)
-        extra_box.addWidget(self.show_value)
-        # extra_box.addWidget(self.show_names)
-        extra_box.addWidget(self.show_constraint_types)
+        # --- Nouveau cadre ---
+        group_middle = QtGui.QGroupBox(tr("middle_group"))
+        middle_box = QtGui.QVBoxLayout()
+        middle_box.setSpacing(0)
+        middle_box.setContentsMargins(5, 5, 5, 5)
+        group_middle.setLayout(middle_box)
 
-        #self.show_names.stateChanged.connect(self.recompute)
+        middle_box.addWidget(self.show_labels_alias)
+        middle_box.addWidget(self.show_formula)
+        middle_box.addWidget(self.show_value)
+        middle_box.addWidget(self.show_constraint_types)
+
+        # Connexions
         self.show_labels_alias.stateChanged.connect(self.recompute)
         self.show_constraint_types.stateChanged.connect(self.recompute)
 
@@ -664,8 +699,7 @@ class RefDialog2(QtGui.QDialog):
         right_box.addWidget(self.btn_collapse_all)
 
         # Assemblage du haut
-        top_line.addLayout(modes_box)
-        top_line.addLayout(extra_box)
+        top_line.addWidget(group_middle)
         top_line.addLayout(right_box)
 
         layout.addLayout(top_line)
@@ -690,11 +724,9 @@ class RefDialog2(QtGui.QDialog):
         self.btn_collapse_all.clicked.connect(self.collapse_all)
         self.level_spin.valueChanged.connect(self.set_expand_level)
 
-        # ✔ NOUVEAU : connexions des 2 cases à cocher
         self.cb_out.toggled.connect(self.recompute)
         self.cb_in.toggled.connect(self.recompute)
 
-        # Cases à cocher existantes
         self.show_formula.stateChanged.connect(self.recompute)
         self.show_value.stateChanged.connect(self.recompute)
 
@@ -809,17 +841,23 @@ class RefDialog2(QtGui.QDialog):
         self.cb_out.setChecked(ui.getboolean("show_out", True))
         self.cb_in.setChecked(ui.getboolean("show_in", True))
 
-        # --- Cases à cocher ---
+        # --- Filtres Cellules / Contraintes / Autres ---
+        self.filter_cells.setChecked(ui.getboolean("filter_cells", True))
+        self.filter_constraints.setChecked(ui.getboolean("filter_constraints", True))
+        self.filter_others.setChecked(ui.getboolean("filter_others", True))
+
+        # --- Cases à cocher existantes ---
         self.show_formula.setChecked(ui.getboolean("show_formula", False))
         self.show_value.setChecked(ui.getboolean("show_value", False))
-        # self.show_names.setChecked(ui.getboolean("show_names", False))
         self.show_labels_alias.setChecked(ui.getboolean("show_labels_alias", False))
         self.show_constraint_types.setChecked(ui.getboolean("show_constraint_types", False))
 
+        # --- Taille ---
         w = ui.getint("width", 600)
         h = ui.getint("height", 400)
         self.resize(w, h)
 
+        # --- Position ---
         x = ui.getint("pos_x", 100)
         y = ui.getint("pos_y", 100)
 
@@ -854,10 +892,14 @@ class RefDialog2(QtGui.QDialog):
         config["UI"]["show_out"] = str(self.cb_out.isChecked())
         config["UI"]["show_in"] = str(self.cb_in.isChecked())
 
+        # --- Filtres Cellules / Contraintes / Autres ---
+        config["UI"]["filter_cells"] = str(self.filter_cells.isChecked())
+        config["UI"]["filter_constraints"] = str(self.filter_constraints.isChecked())
+        config["UI"]["filter_others"] = str(self.filter_others.isChecked())
+
         # --- Cases à cocher existantes ---
         config["UI"]["show_formula"] = str(self.show_formula.isChecked())
         config["UI"]["show_value"] = str(self.show_value.isChecked())
-        # config["UI"]["show_names"] = str(self.show_names.isChecked())
         config["UI"]["show_labels_alias"] = str(self.show_labels_alias.isChecked())
         config["UI"]["show_constraint_types"] = str(self.show_constraint_types.isChecked())
 
@@ -892,12 +934,20 @@ class RefDialog2(QtGui.QDialog):
     # --------------------------------------------------------
     def recompute(self):
         self.graph = build_graph()
+        self.sheet.ViewObject.doubleClicked()
+        """
         try:
             view = FreeCADGui.ActiveDocument.ActiveView
             self.sheet = view.getSheet()
         except:
+            # Avant : return silencieux
+            QtWidgets.QMessageBox.warning(
+                None,
+                tr("error_title"),  # "Erreur" / "Error"
+                tr("spreadsheet_not_active")  # NOUVELLE clé de traduction
+            )
             return  # pas de feuille active → rien à faire
-
+        """
         self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
 
         self.tree.clear()
@@ -931,81 +981,220 @@ class RefDialog2(QtGui.QDialog):
         # Déplier automatiquement jusqu'au premier niveau réel
         self.set_expand_level(self.level_spin.value())
 
+    # --- Fonctions de catégorisation ---
+
+    def should_display(self, ref, root_ref):
+        """
+        Détermine si un nœud doit être affiché dans l’arbre,
+        en fonction des cases à cocher Cellules / Contraintes / Autres
+        et de la présence éventuelle de descendants appartenant
+        aux catégories sélectionnées.
+        """
+
+        node = self.graph[ref]
+        cat = self.get_node_category(node)
+
+        # ------------------------------------------------------------
+        # 1) Si la catégorie du nœud correspond directement à un filtre
+        # ------------------------------------------------------------
+        if cat == "cell" and self.filter_cells.isChecked():
+            return True
+
+        if cat == "constraint" and self.filter_constraints.isChecked():
+            return True
+
+        if cat == "other" and self.filter_others.isChecked():
+            return True
+
+        # ------------------------------------------------------------
+        # 2) Sinon : vérifier les descendants selon les filtres actifs
+        # ------------------------------------------------------------
+
+        # Cellules (en ignorant la racine)
+        if self.filter_cells.isChecked():
+            if self.has_descendant_cell(ref, root_ref):
+                return True
+
+        # Contraintes
+        if self.filter_constraints.isChecked():
+            if self.has_descendant_of_category(ref, "constraint"):
+                return True
+
+        # Autres
+        if self.filter_others.isChecked():
+            if self.has_descendant_of_category(ref, "other"):
+                return True
+
+        # ------------------------------------------------------------
+        # 3) Aucun filtre ne correspond → ne pas afficher
+        # ------------------------------------------------------------
+        return False
+
+    def get_node_category(self, node):
+        """
+        Retourne la catégorie logique d’un nœud du graphe :
+        - "constraint"  → si c’est une contrainte d’esquisse
+        - "cell"        → si c’est une cellule de spreadsheet
+        - "other"       → tout le reste (propriétés d’objets FreeCAD, etc.)
+        """
+
+        # 1) Contrainte d’esquisse
+        if node.get("constraint_type"):
+            return "constraint"
+
+        # 2) Cellule de spreadsheet
+        if node.get("kind") == "cell":
+            return "cell"
+
+        # 3) Tout le reste
+        return "other"
+
+    def has_descendant_of_category(self, ref, category, visited=None):
+        """
+        Retourne True si le nœud `ref` possède au moins un descendant
+        (enfant, petit‑enfant, etc.) appartenant à la catégorie donnée.
+        Le nœud lui‑même n’est jamais considéré.
+        """
+        if visited is None:
+            visited = set()
+
+        if ref in visited:
+            return False
+        visited.add(ref)
+
+        for child in self.graph[ref]["children"]:
+            node = self.graph[child]
+            cat = self.get_node_category(node)
+
+            # Enfant direct de la bonne catégorie
+            if cat == category:
+                return True
+
+            # Descendant plus profond
+            if self.has_descendant_of_category(child, category, visited):
+                return True
+
+        return False
+
+    def has_descendant_cell(self, ref, root_ref, visited=None):
+        if visited is None:
+            visited = set()
+
+        if ref in visited:
+            return False
+        visited.add(ref)
+
+        for child in self.graph[ref]["children"]:
+            if child == root_ref:
+                continue  # on ignore la cellule racine
+
+            node = self.graph[child]
+
+            if node["kind"] == "cell":
+                return True
+
+            if self.has_descendant_cell(child, root_ref, visited):
+                return True
+
+        return False
+
     # --------------------------------------------------------
     # BUILD TREE
     # --------------------------------------------------------
-    def add_in_recursive(self, parent_item, ref, reachable):
+    def add_in_recursive(self, parent_item, ref, reachable, root_ref):
         for p in sorted(self.graph[ref]["parents"]):
-            if p in reachable:
-                node = self.graph[p]
-                item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(p, node)])
+            if p not in reachable:
+                continue
 
-                ctype = node.get("constraint_type")
+            # --- Filtrage ---
+            if not self.should_display(p, root_ref):
+                continue
 
-                if ctype:
-                    # Tooltip complet pour les contraintes
-                    item.setToolTip(
-                        0,
-                        f"{tr('formula')}: {node['formula']}\n"
-                        f"{tr('value')}: {node['value']}\n"
-                        f"{tr('type')}: {ctype}\n"
-                        f"{tr('hint_constraint')}"
-                    )
-                else:
-                    # Tooltip normal
-                    item.setToolTip(
-                        0,
-                        f"{tr('formula')}: {node['formula']}\n"
-                        f"{tr('value')}: {node['value']}"
-                    )
+            node = self.graph[p]
+            item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(p, node)])
 
-                # Données internes pour clic droit
-                if node["kind"] == "property" and node["property"].startswith("Constraints["):
-                    try:
-                        idx = int(node["property"][len("Constraints["):-1])
-                        item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
-                        item.setData(0, QtCore.Qt.UserRole + 2, idx)
-                    except:
-                        pass
+            ctype = node.get("constraint_type")
 
-                self.add_in_recursive(item, p, reachable)
+            if ctype:
+                item.setToolTip(
+                    0,
+                    f"{tr('content')}: {node['formula']}\n"
+                    f"{tr('value')}: {node['value']}\n"
+                    f"{tr('type')}: {ctype}\n"
+                    f"{tr('hint_constraint')}"
+                )
+            else:
+                item.setToolTip(
+                    0,
+                    f"{tr('content')}: {node['formula']}\n"
+                    f"{tr('value')}: {node['value']}"
+                )
 
-    def add_out_recursive(self, parent_item, ref, reachable):
+            # Données internes pour clic droit
+            if node["kind"] == "property" and node["property"].startswith("Constraints["):
+                try:
+                    idx = int(node["property"][len("Constraints["):-1])
+                    item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
+                    item.setData(0, QtCore.Qt.UserRole + 2, idx)
+                except:
+                    pass
+
+            # --- Récursion ---
+            self.add_in_recursive(item, p, reachable, root_ref)
+
+    def add_out_recursive(self, parent_item, ref, reachable, root_ref):
         for c in sorted(self.graph[ref]["children"]):
-            if c in reachable:
-                node = self.graph[c]
-                item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
+            if c not in reachable:
+                continue
 
-                ctype = node.get("constraint_type")
+            # --- Filtrage ---
+            if not self.should_display(c, root_ref):
+                continue
 
-                if ctype:
-                    # Tooltip complet pour les contraintes
-                    item.setToolTip(
-                        0,
-                        f"{tr('formula')}: {node['formula']}\n"
-                        f"{tr('value')}: {node['value']}\n"
-                        f"{tr('type')}: {ctype}\n"
-                        f"{tr('hint_constraint')}"
-                    )
-                else:
-                    # Tooltip normal
-                    item.setToolTip(
-                        0,
-                        f"{tr('formula')}: {node['formula']}\n"
-                        f"{tr('value')}: {node['value']}"
-                    )
+            node = self.graph[c]
+            item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
 
-                if node["kind"] == "property" and node["property"].startswith("Constraints["):
-                    try:
-                        idx = int(node["property"][len("Constraints["):-1])
-                        item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
-                        item.setData(0, QtCore.Qt.UserRole + 2, idx)
-                    except:
-                        pass
+            ctype = node.get("constraint_type")
 
-                self.add_out_recursive(item, c, reachable)
+            if ctype:
+                item.setToolTip(
+                    0,
+                    f"{tr('content')}: {node['formula']}\n"
+                    f"{tr('value')}: {node['value']}\n"
+                    f"{tr('type')}: {ctype}\n"
+                    f"{tr('hint_constraint')}"
+                )
+            else:
+                item.setToolTip(
+                    0,
+                    f"{tr('content')}: {node['formula']}\n"
+                    f"{tr('value')}: {node['value']}"
+                )
+
+            # Données internes pour clic droit
+            if node["kind"] == "property" and node["property"].startswith("Constraints["):
+                try:
+                    idx = int(node["property"][len("Constraints["):-1])
+                    item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
+                    item.setData(0, QtCore.Qt.UserRole + 2, idx)
+                except:
+                    pass
+
+            # --- Récursion ---
+            self.add_out_recursive(item, c, reachable, root_ref)
 
     def build_tree(self, root):
+        self.tree.clear()
+
+        # ------------------------------------------------------------
+        # 1) Filtrage de la racine
+        # ------------------------------------------------------------
+        if not self.should_display(root, root):
+            return  # Arbre vide si la racine ne correspond pas aux filtres
+
+        # ------------------------------------------------------------
+        # 2) Création de l’item racine
+        # ------------------------------------------------------------
         root_item = QtGui.QTreeWidgetItem(
             self.tree,
             [self.enrich_label(root, self.graph[root])]
@@ -1022,24 +1211,29 @@ class RefDialog2(QtGui.QDialog):
             tooltip += f"\n{tr('value')}: {value}"
 
         root_item.setToolTip(0, tooltip.strip())
-        root_item.setExpanded(True)  # La racine est toujours dépliée
+        root_item.setExpanded(True)
 
+        # ------------------------------------------------------------
+        # 3) Exploration du graphe
+        # ------------------------------------------------------------
         allow_parents = self.cb_out.isChecked()
         allow_children = self.cb_in.isChecked()
 
         reachable = explore_graph(root, self.graph, allow_parents, allow_children)
 
-        # IN section (récursif)
+        # ------------------------------------------------------------
+        # 4) Section IN (Uses)
+        # ------------------------------------------------------------
         if allow_parents:
             in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses")])
-            self.add_in_recursive(in_item, root, reachable)
-            # Pas de setExpanded ici — géré par set_expand_level()
+            self.add_in_recursive(in_item, root, reachable, root)
 
-        # OUT section (récursif)
+        # ------------------------------------------------------------
+        # 5) Section OUT (Used by)
+        # ------------------------------------------------------------
         if allow_children:
             out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by")])
-            self.add_out_recursive(out_item, root, reachable)
-            # Pas de setExpanded ici — géré par set_expand_level()
+            self.add_out_recursive(out_item, root, reachable, root)
 
     def get_tree_depth(self):
         """Retourne la profondeur maximale de l'arbre affiché."""
@@ -1186,6 +1380,8 @@ class RefDialog2(QtGui.QDialog):
             if w.metaObject().className() == "SpreadsheetGui::SheetView":
                 w.setFocus()
                 return
+
+
 
 
 # ------------------------------------------------------------
