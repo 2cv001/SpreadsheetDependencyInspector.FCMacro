@@ -77,7 +77,7 @@ TRANSLATIONS = {
         "show_formula": "Contenu",
         "show_value": "Valeur",
         "show_names": "Nom",
-        "show_labels_alias": "Lbels / alias",
+        "show_labels_alias": "Labels et alias",
         "show_constraint_types": "Types de contrainte",
 
         # Sections arbre
@@ -121,7 +121,7 @@ TRANSLATIONS = {
         "show_formula": "Content",
         "show_value": "Value",
         "show_names": "Names",
-        "show_labels_alias": "Show labels / aliases",
+        "show_labels_alias": "Show labels and aliases",
         "show_constraint_types": "Show constraint types",
 
 
@@ -620,10 +620,10 @@ class RefDialog2(QtGui.QDialog):
         self.show_labels_alias = QtGui.QCheckBox(tr("show_labels_alias"))
         self.show_constraint_types = QtGui.QCheckBox(tr("show_constraint_types"))
 
+        extra_box.addWidget(self.show_labels_alias)
         extra_box.addWidget(self.show_formula)
         extra_box.addWidget(self.show_value)
         # extra_box.addWidget(self.show_names)
-        extra_box.addWidget(self.show_labels_alias)
         extra_box.addWidget(self.show_constraint_types)
 
         #self.show_names.stateChanged.connect(self.recompute)
