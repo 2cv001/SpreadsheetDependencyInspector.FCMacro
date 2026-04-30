@@ -4,10 +4,10 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/04/29 20:58"  # YYYY/MM/DD
+__Date__ = "2026/04/30 07:51"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
-__Wiki__ = "https://wiki.freecad.org/SpreadsheetDependencyInspector"
+__Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
 __License__ = "Apache-2.0"
 # https://wiki.freecad.org/File:SpreadsheetDependencyInspector.png
 
@@ -76,8 +76,12 @@ TRANSLATIONS = {
         "level_prefix": "Niveau: ",
 
         # Cases à cocher
-        "show_formula": "Afficher la formule dans la ligne",
-        "show_value": "Afficher la valeur dans la ligne",
+        "show_formula": "Formule",
+        "show_value": "Valeur",
+        "show_names": "Nom",
+        "show_labels_alias": "Lbels / alias",
+        "show_constraint_types": "Types de contrainte",
+
 
         # Sections arbre
         "uses": "Utilise",
@@ -116,8 +120,12 @@ TRANSLATIONS = {
         "level_prefix": "Level: ",
 
         # Cases à cocher
-        "show_formula": "Show formula in line",
-        "show_value": "Show value in line",
+        "show_formula": "Show formulae",
+        "show_value": "Show value",
+        "show_names": "Show names",
+        "show_labels_alias": "Show labels / aliases",
+        "show_constraint_types": "Show constraint types",
+
 
         # Sections arbre
         "uses": "Uses",
@@ -600,8 +608,28 @@ class RefDialog2(QtGui.QDialog):
         # --- Cases à cocher supplémentaires ---
         self.show_formula = QtGui.QCheckBox(tr("show_formula"))
         self.show_value = QtGui.QCheckBox(tr("show_value"))
-        modes_box.addWidget(self.show_formula)
-        modes_box.addWidget(self.show_value)
+
+        # ============================================================
+        #  Colonne du milieu
+        #  Cases à cocher supplémentaires (noms, labels/alias, types)
+        # ============================================================
+        extra_box = QtGui.QVBoxLayout()
+        extra_box.setSpacing(0)
+        extra_box.setContentsMargins(10, 0, 10, 0)
+
+        # self.show_names = QtGui.QCheckBox(tr("show_names"))
+        self.show_labels_alias = QtGui.QCheckBox(tr("show_labels_alias"))
+        self.show_constraint_types = QtGui.QCheckBox(tr("show_constraint_types"))
+
+        extra_box.addWidget(self.show_formula)
+        extra_box.addWidget(self.show_value)
+        # extra_box.addWidget(self.show_names)
+        extra_box.addWidget(self.show_labels_alias)
+        extra_box.addWidget(self.show_constraint_types)
+
+        #self.show_names.stateChanged.connect(self.recompute)
+        self.show_labels_alias.stateChanged.connect(self.recompute)
+        self.show_constraint_types.stateChanged.connect(self.recompute)
 
         # ============================================================
         #  Colonne de droite (boutons)
@@ -638,7 +666,9 @@ class RefDialog2(QtGui.QDialog):
 
         # Assemblage du haut
         top_line.addLayout(modes_box)
+        top_line.addLayout(extra_box)
         top_line.addLayout(right_box)
+
         layout.addLayout(top_line)
 
         # ============================================================
@@ -678,27 +708,31 @@ class RefDialog2(QtGui.QDialog):
         self.recompute()
 
     # --------------------------------------------------------
-    # Enrichissement du texte affiché dans l'arbre
+    # Construit le texte affiché dans l'arbre
     # --------------------------------------------------------
-
     def enrich_label(self, ref, node):
         """
-        Construit le texte affiché dans l'arbre :
-        - datas(LabelDatas).D5 (Hauteur)
-        - Pad(LabelPad).Length
-        - Ajoute formule, valeur et type selon les cases cochées
+        Construit le texte affiché dans l'arbre selon les cases cochées :
+        - labels / alias
+        - formule
+        - valeur
+        - type de contrainte
         """
 
-        # --- 1) Détection du type ---
         kind = node.get("kind")
 
-        # --- 2) CELLULE SPREADSHEET ---
+        # ------------------------------------------------------------
+        # 1) CELLULE SPREADSHEET
+        # ------------------------------------------------------------
         if kind == "cell":
-            sheet = node["sheet"]  # ex: "datas"
-            cell = node["cell"]  # ex: "D5"
+            sheet = node["sheet"]
+            cell = node["cell"]
             alias = node.get("alias")
 
-            # Récupérer le label de la feuille
+            # Nom interne : datas.D5
+            internal = f"{sheet}.{cell}"
+
+            # Label de la feuille
             sheet_label = None
             try:
                 sheet_obj = App.ActiveDocument.getObject(sheet)
@@ -707,48 +741,57 @@ class RefDialog2(QtGui.QDialog):
             except:
                 pass
 
-            # Construire datas(LabelDatas).D5
+            # Nom avec label : datas(LabelDatas).D5
             if sheet_label:
-                base = f"{sheet}({sheet_label}).{cell}"
+                labeled = f"{sheet}({sheet_label}).{cell}"
             else:
-                base = f"{sheet}.{cell}"
+                labeled = internal
 
-            # Ajouter l’alias
-            if alias:
+            # Choix simple : label/alias ou nom interne
+            base = labeled if self.show_labels_alias.isChecked() else internal
+
+            # Alias
+            if self.show_labels_alias.isChecked() and alias:
                 base += f" ({alias})"
 
-        # --- 3) PROPRIÉTÉ D'OBJET FREECAD ---
+        # ------------------------------------------------------------
+        # 2) PROPRIÉTÉ D'OBJET FREECAD
+        # ------------------------------------------------------------
         elif kind == "property":
-            obj = node["object"]  # ex: "Pad"
-            prop = node["property"]  # ex: "Length"
-            obj_label = node.get("label")
+            obj = node["object"]
+            prop = node["property"]
+            obj_label = node.get("label") or obj
 
-            # Fallback : si label vide, utiliser le Name de l'objet
-            if not obj_label:
-                obj_label = node.get("object")  # ex: "Sketch"
+            internal = f"{obj}.{prop}"
+            labeled = f"{obj}({obj_label}).{prop}"
 
-            # Construire Pad(LabelPad).Length
-            if obj_label:
-                base = f"{obj}({obj_label}).{prop}"
-            else:
-                base = f"{obj}.{prop}"
+            base = labeled if self.show_labels_alias.isChecked() else internal
 
-        # --- 4) AUTRE ---
+        # ------------------------------------------------------------
+        # 3) AUTRE
+        # ------------------------------------------------------------
         else:
             base = ref
 
-        # --- 5) Ajouter formule ---
+        # ------------------------------------------------------------
+        # 4) Formule
+        # ------------------------------------------------------------
         if self.show_formula.isChecked() and node.get("formula"):
             base += f" — {tr('content')}: {node['formula']}"
 
-        # --- 6) Ajouter valeur ---
+        # ------------------------------------------------------------
+        # 5) Valeur
+        # ------------------------------------------------------------
         if self.show_value.isChecked() and node.get("value") is not None:
             base += f" — {tr('value')}: {node['value']}"
 
-        # --- 7)  Ajouter type de contrainte si présent ---
-        ctype = node.get("constraint_type")
-        if ctype:
-            base += f" — {tr('type')}: {ctype}"
+        # ------------------------------------------------------------
+        # 6) Type de contrainte
+        # ------------------------------------------------------------
+        if self.show_constraint_types.isChecked():
+            ctype = node.get("constraint_type")
+            if ctype:
+                base += f" — {tr('type')}: {ctype}"
 
         return base
 
@@ -770,6 +813,9 @@ class RefDialog2(QtGui.QDialog):
         # --- Cases à cocher ---
         self.show_formula.setChecked(ui.getboolean("show_formula", False))
         self.show_value.setChecked(ui.getboolean("show_value", False))
+        # self.show_names.setChecked(ui.getboolean("show_names", False))
+        self.show_labels_alias.setChecked(ui.getboolean("show_labels_alias", False))
+        self.show_constraint_types.setChecked(ui.getboolean("show_constraint_types", False))
 
         w = ui.getint("width", 600)
         h = ui.getint("height", 400)
@@ -812,6 +858,9 @@ class RefDialog2(QtGui.QDialog):
         # --- Cases à cocher existantes ---
         config["UI"]["show_formula"] = str(self.show_formula.isChecked())
         config["UI"]["show_value"] = str(self.show_value.isChecked())
+        # config["UI"]["show_names"] = str(self.show_names.isChecked())
+        config["UI"]["show_labels_alias"] = str(self.show_labels_alias.isChecked())
+        config["UI"]["show_constraint_types"] = str(self.show_constraint_types.isChecked())
 
         # --- Taille ---
         size = self.size()
