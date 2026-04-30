@@ -67,7 +67,6 @@ TRANSLATIONS = {
         "mode_out": "Utilise",
         "mode_in": "Est utilisé par",
 
-
         # Boutons
         "btn_expand": "Tout déplier",
         "btn_collapse": "Tout replier",
@@ -75,12 +74,11 @@ TRANSLATIONS = {
         "level_prefix": "Niveau: ",
 
         # Cases à cocher
-        "show_formula": "Formule",
+        "show_formula": "Contenu",
         "show_value": "Valeur",
         "show_names": "Nom",
         "show_labels_alias": "Lbels / alias",
         "show_constraint_types": "Types de contrainte",
-
 
         # Sections arbre
         "uses": "Utilise",
@@ -120,9 +118,9 @@ TRANSLATIONS = {
         "level_prefix": "Level: ",
 
         # Cases à cocher
-        "show_formula": "Show formulae",
-        "show_value": "Show value",
-        "show_names": "Show names",
+        "show_formula": "Content",
+        "show_value": "Value",
+        "show_names": "Names",
         "show_labels_alias": "Show labels / aliases",
         "show_constraint_types": "Show constraint types",
 
