@@ -634,10 +634,10 @@ class RefDialog2(QtGui.QDialog):
         modes_box.addWidget(self.filter_constraints)
         modes_box.addWidget(self.filter_others)
 
-        # Connexions (une seule fois)
-        self.filter_cells.stateChanged.connect(self.recompute)
-        self.filter_constraints.stateChanged.connect(self.recompute)
-        self.filter_others.stateChanged.connect(self.recompute)
+        # Connexions
+        self.filter_cells.toggled.connect(self.on_change_coche)
+        self.filter_constraints.toggled.connect(self.on_change_coche)
+        self.filter_others.toggled.connect(self.on_change_coche)
 
         # Ajout du groupe dans la fenêtre
         top_line.addWidget(group_lines)
@@ -725,8 +725,8 @@ class RefDialog2(QtGui.QDialog):
         self.btn_collapse_all.clicked.connect(self.collapse_all)
         self.level_spin.valueChanged.connect(self.set_expand_level)
 
-        self.cb_out.toggled.connect(self.recompute)
-        self.cb_in.toggled.connect(self.recompute)
+        self.cb_out.toggled.connect(self.on_change_coche)
+        self.cb_in.toggled.connect(self.on_change_coche)
 
         self.show_formula.stateChanged.connect(self.recompute)
         self.show_value.stateChanged.connect(self.recompute)
@@ -936,19 +936,7 @@ class RefDialog2(QtGui.QDialog):
     def recompute(self):
         self.graph = build_graph()
         self.sheet.ViewObject.doubleClicked()
-        """
-        try:
-            view = FreeCADGui.ActiveDocument.ActiveView
-            self.sheet = view.getSheet()
-        except:
-            # Avant : return silencieux
-            QtWidgets.QMessageBox.warning(
-                None,
-                tr("error_title"),  # "Erreur" / "Error"
-                tr("spreadsheet_not_active")  # NOUVELLE clé de traduction
-            )
-            return  # pas de feuille active → rien à faire
-        """
+
         self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
 
         self.tree.clear()
@@ -981,6 +969,7 @@ class RefDialog2(QtGui.QDialog):
 
         # Déplier automatiquement jusqu'au premier niveau réel
         self.set_expand_level(self.level_spin.value())
+
 
     # --- Fonctions de catégorisation ---
 
@@ -1490,7 +1479,10 @@ class RefDialog2(QtGui.QDialog):
                 w.setFocus()
                 return
 
-
+    def on_change_coche(self, checked):
+        self.recompute()
+        if checked:  # seulement si COCHÉ
+            self.expand_all()
 
 
 # ------------------------------------------------------------
