@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/05/01 17:09"  # YYYY/MM/DD
+__Date__ = "2026/05/01 17:58"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -580,7 +580,6 @@ def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=N
 class RefDialog2(QtGui.QDialog):
     def __init__(self, sheet):
         super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
-        self.DEBUG = True
 
         self.last_level = 0
         self.sheet = sheet
@@ -1057,105 +1056,53 @@ class RefDialog2(QtGui.QDialog):
             visited = set()
 
         if ref in visited:
-            if self.DEBUG:
-                print(f"[STOP] ref={ref} déjà visité → False")
             return False
         visited.add(ref)
 
         node = self.graph[ref]
         cat = self.get_node_category(node)
 
-        if self.DEBUG:
-            print(f"\n[ENTER] ref={ref}, cat={cat}, cherche={category}, direction={direction}")
 
         # --- Direction parents (Uses) ---
         if direction == "parents":
-            if self.DEBUG:
-                print(f"  → Explore parents de {ref}")
+
 
             for p in self.graph[ref]["parents"]:
                 if p not in reachable:
-                    if self.DEBUG:
-                        print(f"    - parent {p} ignoré (hors reachable)")
+
                     continue
 
                 node_p = self.graph[p]
                 cat_p = self.get_node_category(node_p)
 
-                if self.DEBUG:
-                    print(f"    - parent {p}, cat={cat_p}")
-
                 if cat_p == category:
-                    if self.DEBUG:
-                        print(f"      ✔ MATCH direct sur {p} → True")
                     return True
 
-                if self.DEBUG:
-                    print(f"      ↳ Descente récursive dans {p}")
 
                 if self.has_descendant_of_category(p, category, "parents", reachable, visited):
-                    if self.DEBUG:
-                        print(f"      ✔ MATCH descendant via {p} → True")
                     return True
 
         # --- Direction children (Used by) ---
         if direction == "children":
-            if self.DEBUG:
-                print(f"  → Explore children de {ref}")
 
             for c in self.graph[ref]["children"]:
                 if c not in reachable:
-                    if self.DEBUG:
-                        print(f"    - child {c} ignoré (hors reachable)")
                     continue
 
                 node_c = self.graph[c]
                 cat_c = self.get_node_category(node_c)
 
-                if self.DEBUG:
-                    print(f"    - child {c}, cat={cat_c}")
-
                 if cat_c == category:
-                    if self.DEBUG:
-                        print(f"      ✔ MATCH direct sur {c} → True")
-                    return True
 
-                if self.DEBUG:
-                    print(f"      ↳ Descente récursive dans {c}")
+                    return True
 
                 if self.has_descendant_of_category(c, category, "children", reachable, visited):
-                    if self.DEBUG:
-                        print(f"      ✔ MATCH descendant via {c} → True")
+
                     return True
 
-        if self.DEBUG:
-            print(f"[NO MATCH] ref={ref} → False")
-
         return False
 
-    """
-    def has_descendant_cell(self, ref, root_ref, visited=None):
-        if visited is None:
-            visited = set()
 
-        if ref in visited:
-            return False
-        visited.add(ref)
-
-        for child in self.graph[ref]["children"]:
-            if child == root_ref:
-                continue  # on ignore la cellule racine
-
-            node = self.graph[child]
-
-            if node["kind"] == "cell":
-                return True
-
-            if self.has_descendant_cell(child, root_ref, visited):
-                return True
-
-        return False
-    """
     # --------------------------------------------------------
     # BUILD TREE
     # --------------------------------------------------------
@@ -1166,30 +1113,29 @@ class RefDialog2(QtGui.QDialog):
                 continue
 
             # --- Filtrage ---
-            # should_display() appelle maintenant has_descendant_of_category()
-            # avec direction="parents" pour cette branche
             if not self.should_display(p, root_ref, reachable, "parents"):
                 continue
 
             node = self.graph[p]
             item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(p, node)])
 
-            ctype = node.get("constraint_type")
+            # --- Tooltip enrichi ---
+            tooltip = f"Name : {node.get('ref', '')}"
 
-            if ctype:
-                item.setToolTip(
-                    0,
-                    f"{tr('content')}: {node['formula']}\n"
-                    f"{tr('value')}: {node['value']}\n"
-                    f"{tr('type')}: {ctype}\n"
-                    f"{tr('hint_constraint')}"
-                )
+            if node.get("kind") == "cell":
+                tooltip += f"\nAlias : {node.get('label', '')}"
             else:
-                item.setToolTip(
-                    0,
-                    f"{tr('content')}: {node['formula']}\n"
-                    f"{tr('value')}: {node['value']}"
-                )
+                tooltip += f"\nLabel : {node.get('label', '')}"
+
+            tooltip += f"\n{tr('content')}: {node['formula']}"
+            tooltip += f"\n{tr('value')}: {node['value']}"
+
+            ctype = node.get("constraint_type")
+            if ctype:
+                tooltip += f"\n{tr('type')}: {ctype}"
+                tooltip += f"\n{tr('hint_constraint')}"
+
+            item.setToolTip(0, tooltip)
 
             # Données internes pour clic droit
             if node["kind"] == "property" and node["property"].startswith("Constraints["):
@@ -1210,31 +1156,29 @@ class RefDialog2(QtGui.QDialog):
                 continue
 
             # --- Filtrage ---
-            # should_display() appelle maintenant has_descendant_of_category()
-            # avec direction="children" pour cette branche
             if not self.should_display(c, root_ref, reachable, "children"):
                 continue
-
 
             node = self.graph[c]
             item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
 
-            ctype = node.get("constraint_type")
+            # --- Tooltip enrichi ---
+            tooltip = f"Name : {node.get('ref', '')}"
 
-            if ctype:
-                item.setToolTip(
-                    0,
-                    f"{tr('content')}: {node['formula']}\n"
-                    f"{tr('value')}: {node['value']}\n"
-                    f"{tr('type')}: {ctype}\n"
-                    f"{tr('hint_constraint')}"
-                )
+            if node.get("kind") == "cell":
+                tooltip += f"\nAlias : {node.get('label', '')}"
             else:
-                item.setToolTip(
-                    0,
-                    f"{tr('content')}: {node['formula']}\n"
-                    f"{tr('value')}: {node['value']}"
-                )
+                tooltip += f"\nLabel : {node.get('label', '')}"
+
+            tooltip += f"\n{tr('content')}: {node['formula']}"
+            tooltip += f"\n{tr('value')}: {node['value']}"
+
+            ctype = node.get("constraint_type")
+            if ctype:
+                tooltip += f"\n{tr('type')}: {ctype}"
+                tooltip += f"\n{tr('hint_constraint')}"
+
+            item.setToolTip(0, tooltip)
 
             # Données internes pour clic droit
             if node["kind"] == "property" and node["property"].startswith("Constraints["):
@@ -1275,14 +1219,12 @@ class RefDialog2(QtGui.QDialog):
             root_visible = True
 
         # 2b) Sinon : tester les branches Uses et Used by
-        # Branche Uses (parents)
         if not root_visible and self.cb_out.isChecked():
             for p in self.graph[root]["parents"]:
                 if p in reachable and self.should_display(p, root, reachable, "parents"):
                     root_visible = True
                     break
 
-        # Branche Used by (children)
         if not root_visible and self.cb_in.isChecked():
             for c in self.graph[root]["children"]:
                 if c in reachable and self.should_display(c, root, reachable, "children"):
@@ -1301,16 +1243,29 @@ class RefDialog2(QtGui.QDialog):
         )
 
         node = self.graph[root]
-        formula = node.get("formula")
-        value = node.get("value")
 
-        tooltip = ""
-        if formula:
-            tooltip += f"{tr('content')}: {formula}"
+        # ------------------------------------------------------------
+        # 3b) Tooltip enrichi (NOUVEAU)
+        # ------------------------------------------------------------
+        tooltip = f"Name : {node.get('ref', '')}"
+
+        if node.get("kind") == "cell":
+            tooltip += f"\nAlias : {node.get('label', '')}"
+        else:
+            tooltip += f"\nLabel : {node.get('label', '')}"
+
+        tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
+
+        value = node.get("value")
         if value is not None:
             tooltip += f"\n{tr('value')}: {value}"
 
-        root_item.setToolTip(0, tooltip.strip())
+        ctype = node.get("constraint_type")
+        if ctype:
+            tooltip += f"\n{tr('type')}: {ctype}"
+            tooltip += f"\n{tr('hint_constraint')}"
+
+        root_item.setToolTip(0, tooltip)
         root_item.setExpanded(True)
 
         # ------------------------------------------------------------
@@ -1320,7 +1275,6 @@ class RefDialog2(QtGui.QDialog):
             in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses")])
             self.add_in_recursive(in_item, root, reachable, root)
 
-            # Supprimer si vide
             if in_item.childCount() == 0:
                 root_item.removeChild(in_item)
 
@@ -1331,7 +1285,6 @@ class RefDialog2(QtGui.QDialog):
             out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by")])
             self.add_out_recursive(out_item, root, reachable, root)
 
-            # Supprimer si vide
             if out_item.childCount() == 0:
                 root_item.removeChild(out_item)
 
