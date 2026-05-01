@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/04/30 21:22"  # YYYY/MM/DD
+__Date__ = "2026/05/01 17:09"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -102,7 +102,7 @@ TRANSLATIONS = {
         "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
         "sketch_not_open_title": "Sketch non ouvert",
         "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
-        "hint_constraint": "Clic droit pour voir et sélectionner la contrainte",
+        "hint_constraint": "Clic droit sur la ligne pour voir et sélectionner la contrainte",
         "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
 
     },
@@ -154,7 +154,7 @@ TRANSLATIONS = {
         "error_select_cells": "Select cells in a Spreadsheet.",
         "sketch_not_open_title": "Sketch not open",
         "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
-        "hint_constraint": "Right‑click to view and select the constraint",
+        "hint_constraint": "Right‑click on the line to view and select the constraint",
         "spreadsheet_not_active": "The Spreadsheet must be the active window.",
 
     }
@@ -629,6 +629,7 @@ class RefDialog2(QtGui.QDialog):
         self.filter_cells.setChecked(True)
         self.filter_constraints.setChecked(True)
         self.filter_others.setChecked(True)
+        self.filter_constraints.setToolTip(tr("hint_constraint"))
 
         modes_box.addWidget(self.filter_cells)
         modes_box.addWidget(self.filter_constraints)
@@ -649,6 +650,7 @@ class RefDialog2(QtGui.QDialog):
         self.show_value = QtGui.QCheckBox(tr("show_value"))
         self.show_labels_alias = QtGui.QCheckBox(tr("show_labels_alias"))
         self.show_constraint_types = QtGui.QCheckBox(tr("show_constraint_types"))
+        self.show_constraint_types.setToolTip(tr("hint_constraint"))
 
         # --- Nouveau cadre ---
         group_middle = QtGui.QGroupBox(tr("middle_group"))
