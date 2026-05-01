@@ -580,6 +580,7 @@ def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=N
 class RefDialog2(QtGui.QDialog):
     def __init__(self, sheet):
         super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
+        self.DEBUG = True
 
         self.last_level = 0
         self.sheet = sheet
@@ -983,13 +984,7 @@ class RefDialog2(QtGui.QDialog):
 
     # --- Fonctions de catégorisation ---
 
-    def should_display(self, ref, root_ref, reachable=None):
-        """
-        Détermine si un nœud doit être affiché dans l’arbre,
-        en fonction des cases à cocher Cellules / Contraintes / Autres
-        et du sous-graphe réellement exploré (reachable).
-        """
-
+    def should_display(self, ref, root_ref, reachable, branch_direction):
         if reachable is None:
             reachable = self.graph.keys()
 
@@ -1006,18 +1001,36 @@ class RefDialog2(QtGui.QDialog):
         if cat == "other" and self.filter_others.isChecked():
             return True
 
-        # 2) Sinon : vérifier les descendants dans la direction choisie
-        if self.filter_cells.isChecked():
-            if self.has_descendant_of_category(ref, "cell", reachable):
-                return True
+        # 2) Descendants dans LA direction du sous-arbre
+        # ------------------------------------------------
+        # IMPORTANT : on ne mélange plus jamais les directions
+        # ------------------------------------------------
 
-        if self.filter_constraints.isChecked():
-            if self.has_descendant_of_category(ref, "constraint", reachable):
-                return True
+        if branch_direction == "parents":  # Branche Uses
+            if self.filter_cells.isChecked():
+                if self.has_descendant_of_category(ref, "cell", "parents", reachable):
+                    return True
 
-        if self.filter_others.isChecked():
-            if self.has_descendant_of_category(ref, "other", reachable):
-                return True
+            if self.filter_constraints.isChecked():
+                if self.has_descendant_of_category(ref, "constraint", "parents", reachable):
+                    return True
+
+            if self.filter_others.isChecked():
+                if self.has_descendant_of_category(ref, "other", "parents", reachable):
+                    return True
+
+        if branch_direction == "children":  # Branche Used by
+            if self.filter_cells.isChecked():
+                if self.has_descendant_of_category(ref, "cell", "children", reachable):
+                    return True
+
+            if self.filter_constraints.isChecked():
+                if self.has_descendant_of_category(ref, "constraint", "children", reachable):
+                    return True
+
+            if self.filter_others.isChecked():
+                if self.has_descendant_of_category(ref, "other", "children", reachable):
+                    return True
 
         return False
 
@@ -1040,17 +1053,12 @@ class RefDialog2(QtGui.QDialog):
         # 3) Tout le reste
         return "other"
 
-    def has_descendant_of_category(self, ref, category, reachable=None, visited=None):
+    def has_descendant_of_category(self, ref, category, direction, reachable=None, visited=None):
         """
-        Retourne True si le nœud `ref` possède au moins un descendant
-        appartenant à la catégorie donnée, en respectant STRICTEMENT
-        la direction choisie :
-          - Utilise        → on regarde les parents
-          - Est utilisé par → on regarde les enfants
-        Le nœud lui‑même n’est jamais considéré.
+        Version instrumentée : affiche tout ce qui est exploré,
+        en respectant STRICTEMENT la direction donnée.
         """
 
-        # reachable absent → compatibilité ancienne
         if reachable is None:
             reachable = self.graph.keys()
 
@@ -1058,45 +1066,83 @@ class RefDialog2(QtGui.QDialog):
             visited = set()
 
         if ref in visited:
+            if self.DEBUG:
+                print(f"[STOP] ref={ref} déjà visité → False")
             return False
         visited.add(ref)
 
-        # Déterminer la direction
-        look_parents = self.cb_out.isChecked()  # Utilise
-        look_children = self.cb_in.isChecked()  # Est utilisé par
+        node = self.graph[ref]
+        cat = self.get_node_category(node)
 
-        # ------------------------------------------------------------
-        # 1) Utilise → on regarde les parents
-        # ------------------------------------------------------------
-        if look_parents:
+        if self.DEBUG:
+            print(f"\n[ENTER] ref={ref}, cat={cat}, cherche={category}, direction={direction}")
+
+        # --- Direction parents (Uses) ---
+        if direction == "parents":
+            if self.DEBUG:
+                print(f"  → Explore parents de {ref}")
+
             for p in self.graph[ref]["parents"]:
                 if p not in reachable:
+                    if self.DEBUG:
+                        print(f"    - parent {p} ignoré (hors reachable)")
                     continue
 
-                node = self.graph[p]
-                if self.get_node_category(node) == category:
+                node_p = self.graph[p]
+                cat_p = self.get_node_category(node_p)
+
+                if self.DEBUG:
+                    print(f"    - parent {p}, cat={cat_p}")
+
+                if cat_p == category:
+                    if self.DEBUG:
+                        print(f"      ✔ MATCH direct sur {p} → True")
                     return True
 
-                if self.has_descendant_of_category(p, category, reachable, visited):
+                if self.DEBUG:
+                    print(f"      ↳ Descente récursive dans {p}")
+
+                if self.has_descendant_of_category(p, category, "parents", reachable, visited):
+                    if self.DEBUG:
+                        print(f"      ✔ MATCH descendant via {p} → True")
                     return True
 
-        # ------------------------------------------------------------
-        # 2) Est utilisé par → on regarde les enfants
-        # ------------------------------------------------------------
-        if look_children:
+        # --- Direction children (Used by) ---
+        if direction == "children":
+            if self.DEBUG:
+                print(f"  → Explore children de {ref}")
+
             for c in self.graph[ref]["children"]:
                 if c not in reachable:
+                    if self.DEBUG:
+                        print(f"    - child {c} ignoré (hors reachable)")
                     continue
 
-                node = self.graph[c]
-                if self.get_node_category(node) == category:
+                node_c = self.graph[c]
+                cat_c = self.get_node_category(node_c)
+
+                if self.DEBUG:
+                    print(f"    - child {c}, cat={cat_c}")
+
+                if cat_c == category:
+                    if self.DEBUG:
+                        print(f"      ✔ MATCH direct sur {c} → True")
                     return True
 
-                if self.has_descendant_of_category(c, category, reachable, visited):
+                if self.DEBUG:
+                    print(f"      ↳ Descente récursive dans {c}")
+
+                if self.has_descendant_of_category(c, category, "children", reachable, visited):
+                    if self.DEBUG:
+                        print(f"      ✔ MATCH descendant via {c} → True")
                     return True
+
+        if self.DEBUG:
+            print(f"[NO MATCH] ref={ref} → False")
 
         return False
 
+    """
     def has_descendant_cell(self, ref, root_ref, visited=None):
         if visited is None:
             visited = set()
@@ -1118,17 +1164,20 @@ class RefDialog2(QtGui.QDialog):
                 return True
 
         return False
-
+    """
     # --------------------------------------------------------
     # BUILD TREE
     # --------------------------------------------------------
     def add_in_recursive(self, parent_item, ref, reachable, root_ref):
+        # Branche "Uses" : on remonte par les parents
         for p in sorted(self.graph[ref]["parents"]):
             if p not in reachable:
                 continue
 
             # --- Filtrage ---
-            if not self.should_display(p, root_ref, reachable):
+            # should_display() appelle maintenant has_descendant_of_category()
+            # avec direction="parents" pour cette branche
+            if not self.should_display(p, root_ref, reachable, "parents"):
                 continue
 
             node = self.graph[p]
@@ -1164,13 +1213,17 @@ class RefDialog2(QtGui.QDialog):
             self.add_in_recursive(item, p, reachable, root_ref)
 
     def add_out_recursive(self, parent_item, ref, reachable, root_ref):
+        # Branche "Used by" : on descend par les enfants
         for c in sorted(self.graph[ref]["children"]):
             if c not in reachable:
                 continue
 
             # --- Filtrage ---
-            if not self.should_display(c, root_ref, reachable):
+            # should_display() appelle maintenant has_descendant_of_category()
+            # avec direction="children" pour cette branche
+            if not self.should_display(c, root_ref, reachable, "children"):
                 continue
+
 
             node = self.graph[c]
             item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
@@ -1217,7 +1270,35 @@ class RefDialog2(QtGui.QDialog):
         # ------------------------------------------------------------
         # 2) Filtrage de la racine (APRÈS exploration)
         # ------------------------------------------------------------
-        if not self.should_display(root, reachable):
+        root_visible = False
+
+        node = self.graph[root]
+        cat = self.get_node_category(node)
+
+        # 2a) Si la racine correspond directement à un filtre → visible
+        if cat == "cell" and self.filter_cells.isChecked():
+            root_visible = True
+        elif cat == "constraint" and self.filter_constraints.isChecked():
+            root_visible = True
+        elif cat == "other" and self.filter_others.isChecked():
+            root_visible = True
+
+        # 2b) Sinon : tester les branches Uses et Used by
+        # Branche Uses (parents)
+        if not root_visible and self.cb_out.isChecked():
+            for p in self.graph[root]["parents"]:
+                if p in reachable and self.should_display(p, root, reachable, "parents"):
+                    root_visible = True
+                    break
+
+        # Branche Used by (children)
+        if not root_visible and self.cb_in.isChecked():
+            for c in self.graph[root]["children"]:
+                if c in reachable and self.should_display(c, root, reachable, "children"):
+                    root_visible = True
+                    break
+
+        if not root_visible:
             return
 
         # ------------------------------------------------------------
