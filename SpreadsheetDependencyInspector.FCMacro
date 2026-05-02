@@ -85,6 +85,8 @@ TRANSLATIONS = {
         "show_labels_alias": "Labels et alias",
         "show_constraint_types": "Types de contrainte",
         "lines_shown": "Lignes vues",
+        "hint_open_sketch": "Clic droit sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée",
+
 
         # Sections arbre
         "uses": "Utilise",
@@ -135,6 +137,8 @@ TRANSLATIONS = {
         "show_labels_alias": "labels and aliases",
         "show_constraint_types": "Constraint types",
         "middle_group": "Shown in line",
+        "hint_open_sketch": "Right‑click a constraint row to open the sketch with the constraint selected",
+
 
 
         # Sections arbre
@@ -662,6 +666,11 @@ class RefDialog2(QtGui.QDialog):
         middle_box.addWidget(self.show_formula)
         middle_box.addWidget(self.show_value)
         middle_box.addWidget(self.show_constraint_types)
+        help_label = QtGui.QLabel(tr("hint_open_sketch"))
+        help_label.setWordWrap(True)
+        # help_label.setStyleSheet("color: gray; font-size: 10px; margin-top: 6px;")
+        help_label.setStyleSheet("color: gray;")
+        middle_box.addWidget(help_label)
 
         # Connexions
         self.show_labels_alias.stateChanged.connect(self.recompute)
