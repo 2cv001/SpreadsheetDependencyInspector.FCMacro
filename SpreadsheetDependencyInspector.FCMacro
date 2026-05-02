@@ -669,7 +669,7 @@ class RefDialog2(QtGui.QDialog):
         help_label = QtGui.QLabel(tr("hint_open_sketch"))
         help_label.setWordWrap(True)
         # help_label.setStyleSheet("color: gray; font-size: 10px; margin-top: 6px;")
-        help_label.setStyleSheet("color: gray;")
+        help_label.setStyleSheet("color: gray; font-style: italic;")
         middle_box.addWidget(help_label)
 
         # Connexions
