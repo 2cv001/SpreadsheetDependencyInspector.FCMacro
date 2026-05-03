@@ -74,17 +74,16 @@ TRANSLATIONS = {
         "level_prefix": "Niveau: ",
 
         # Cases à cocher
-        "middle_group": "Vus dans la ligne",
+        "middle_group": "Colonnes",
         "show_formula": "Contenus",
         "show_value": "Valeurs",
         "filter_cells": "Cellules",
         "filter_constraints": "Contraintes",
         "filter_others": "Autres",
-
         "show_names": "Noms",
         "show_labels_alias": "Labels et alias",
         "show_constraint_types": "Types de contrainte",
-        "lines_shown": "Lignes vues",
+        "lines_shown": "Lignes",
         "hint_open_sketch": "Clic droit sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée",
 
         # Sections arbre
@@ -121,17 +120,16 @@ TRANSLATIONS = {
         "level_prefix": "Level: ",
 
         # Cases à cocher
-        "lines_shown": "Shown lines",
+        "lines_shown": "Lines",
         "show_formula": "Contents",
         "show_value": "Values",
         "filter_cells": "Cells",
         "filter_constraints": "Constraints",
         "filter_others": "Others",
-
         "show_names": "Names",
         "show_labels_alias": "labels and aliases",
         "show_constraint_types": "Constraint types",
-        "middle_group": "Shown in line",
+        "middle_group": "Columns",
         "hint_open_sketch": "Right‑click a constraint row to open the sketch with the constraint selected",
 
         # Sections arbre
@@ -1215,9 +1213,9 @@ class RefDialog2(QtGui.QDialog):
                 tooltip += f"\nType: {ctype}"
                 tooltip += f"\n{tr('hint_constraint')}"
 
-            item.setToolTip(0, tooltip)
-            # for col in range(self.tree.columnCount()):
-            #    item.setToolTip(col, tooltip)
+            # item.setToolTip(0, tooltip)
+            for col in range(self.tree.columnCount()):
+                item.setToolTip(col, tooltip)
 
             # Données internes pour clic droit
             if node["kind"] == "property" and node["property"].startswith("Constraints["):
@@ -1261,9 +1259,10 @@ class RefDialog2(QtGui.QDialog):
                 tooltip += f"\nType: {ctype}"
                 tooltip += f"\n{tr('hint_constraint')}"
 
-            #for col in range(self.tree.columnCount()):
-            #    item.setToolTip(col, tooltip)
-            item.setToolTip(0, tooltip)
+            # item.setToolTip(0, tooltip)
+            for col in range(self.tree.columnCount()):
+                item.setToolTip(col, tooltip)
+
 
             # Données internes pour clic droit
             if node["kind"] == "property" and node["property"].startswith("Constraints["):
@@ -1347,6 +1346,9 @@ class RefDialog2(QtGui.QDialog):
             tooltip += f"\n{tr('hint_constraint')}"
 
         root_item.setToolTip(0, tooltip)
+        for col in range(self.tree.columnCount()):
+            root_item.setToolTip(col, tooltip)
+
         root_item.setExpanded(True)
 
         # ------------------------------------------------------------
