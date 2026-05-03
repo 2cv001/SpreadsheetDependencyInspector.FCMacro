@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/05/01 17:58"  # YYYY/MM/DD
+__Date__ = "2026/05/03 07:06"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -13,11 +13,11 @@ __License__ = "Apache-2.0"
 
 import xml.etree.ElementTree as ET
 import re
+import os
 from PySide import QtGui, QtCore
 import configparser
 import FreeCAD as App
 import FreeCADGui as Gui
-
 
 # Nom du fichier INI
 INI_FILENAME = "SpreadsheetDependencyInspector.ini"
@@ -28,7 +28,6 @@ INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
 DEFAULT_COLLAPSE_LEVEL = 1
 # Niveau initial au lancement de la macro
 INITIAL_LEVEL = 2
-
 
 
 # Détermine la langue de l’utilisateur à partir de FreeCADGui
@@ -52,6 +51,8 @@ def get_user_language():
         return "en"
     except Exception:
         return "en"
+
+
 # Traduit une clé donnée selon la langue utilisateur
 def tr(key):
     lang = get_user_language()
@@ -63,7 +64,6 @@ TRANSLATIONS = {
         "title": "Analyse des références (Spreadsheet + Objets FreeCAD)",
 
         # Modes
-
         "mode_out": "Utilise",
         "mode_in": "Est utilisé par",
 
@@ -87,7 +87,6 @@ TRANSLATIONS = {
         "lines_shown": "Lignes vues",
         "hint_open_sketch": "Clic droit sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée",
 
-
         # Sections arbre
         "uses": "Utilise",
         "used_by": "Est utilisé par",
@@ -106,18 +105,14 @@ TRANSLATIONS = {
         "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
         "hint_constraint": "Clic droit sur la ligne de la contrainte pour ouvrir le sketch, voir et sélectionner la contrainte",
         "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
-
     },
 
     "en": {
         "title": "Reference analysis (Spreadsheet + FreeCAD objects)",
 
         # Modes
-        # "mode_out": "Selected cell → Cells used in its formula",
-        # "mode_in": "Selected cell → Cells referencing it",
         "mode_out": "Uses",
         "mode_in": "Used by",
-        # "mode_cross": "Full cross‑references",
 
         # Boutons
         "btn_expand": "Expand all",
@@ -139,14 +134,11 @@ TRANSLATIONS = {
         "middle_group": "Shown in line",
         "hint_open_sketch": "Right‑click a constraint row to open the sketch with the constraint selected",
 
-
-
         # Sections arbre
         "uses": "Uses",
         "used_by": "Used by",
         "content_of": "Content of",
         "expression_of": "Expression of",
-
 
         # Enrichissement
         "expression": "expression",
@@ -160,7 +152,6 @@ TRANSLATIONS = {
         "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
         "hint_constraint": "Right‑click the constraint’s row to open the sketch, view the constraint, and select it.",
         "spreadsheet_not_active": "The Spreadsheet must be the active window.",
-
     }
 }
 
@@ -168,11 +159,13 @@ TRANSLATIONS = {
 def get_column(cell):
     return ''.join([c for c in cell if not c.isdigit()])
 
+
 def get_row(cell):
     row = ''.join([c for c in cell if c.isdigit()])
     if row == '':
         row = '1'
     return int(row)
+
 
 def get_col_index(col_letters):
     col = 0
@@ -180,11 +173,22 @@ def get_col_index(col_letters):
         col = col * 26 + (ord(ch) - ord('A') + 1)
     return col
 
+
 def addr_to_row_col(addr):
     col_letters = get_column(addr)
     row = get_row(addr)
     col = get_col_index(col_letters)
     return row, col
+
+
+def cell_to_addr(row, col):
+    # col: 1-based index
+    letters = ""
+    while col > 0:
+        col, rem = divmod(col - 1, 26)
+        letters = chr(ord('A') + rem) + letters
+    return f"{letters}{row}"
+
 
 def build_alias_map_for_all_sheets():
     alias_map = {}
@@ -208,6 +212,7 @@ def build_alias_map_for_all_sheets():
                 alias_map[sheet_name][alias] = full_ref
 
     return alias_map
+
 
 def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
     if not formula:
@@ -242,7 +247,6 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
             refs.add(sheet_aliases[t])
 
     return refs
-
 
 
 def openSketchInEditMode(sketch):
@@ -331,6 +335,7 @@ def construire_label_to_name():
 
     return d
 
+
 def traiter_feuille(sheet, graph, label_to_name, alias_map):
     xml = sheet.cells.Content
     if not xml:
@@ -368,7 +373,6 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
 
         graph[cell_ref]["value"] = sheet.get(addr)
 
-
         if content.startswith("#"):
             graph[cell_ref]["errors"].add(content)
 
@@ -385,6 +389,7 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
 
                 graph[cell_ref]["parents"].add(norm)
                 graph[norm]["children"].add(cell_ref)
+
 
 def traiter_objet(obj, graph, label_to_name, alias_map):
 
@@ -442,8 +447,6 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
         # --- DÉPENDANCES ---
         parents_bruts = extract_raw_refs_for_graph(expr, None, alias_map)
 
-
-
         for p in parents_bruts:
 
             #  Trouver la feuille correcte
@@ -458,6 +461,7 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
 
             graph[ref_obj]["parents"].add(p_norm)
             graph[p_norm]["children"].add(ref_obj)
+
 
 def build_graph():
     graph = {}
@@ -482,6 +486,7 @@ def build_graph():
             traiter_feuille(obj, graph, label_to_name, alias_map)
 
     return graph
+
 
 def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
     if not ref:
@@ -533,6 +538,7 @@ def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
     # 5) Sinon, on renvoie tel quel
     return ref
 
+
 def guess_sheet_from_ref(ref, alias_map, label_to_name):
     # Cas <<Label>>.xxx
     if ref.startswith("<<"):
@@ -552,13 +558,13 @@ def guess_sheet_from_ref(ref, alias_map, label_to_name):
 
     return None
 
+
 def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=None):
     """
     Explore récursivement le graphe à partir de ref.
     Retourne un ensemble de nœuds atteignables selon les directions autorisées.
     """
     if isinstance(ref, tuple):
-
         ref = ref[0]
     if visited is None:
         visited = set()
@@ -668,11 +674,10 @@ class RefDialog2(QtGui.QDialog):
         middle_box.addWidget(self.show_constraint_types)
         help_label = QtGui.QLabel(tr("hint_open_sketch"))
         help_label.setWordWrap(True)
-        # help_label.setStyleSheet("color: gray; font-size: 10px; margin-top: 6px;")
         help_label.setStyleSheet("color: gray; font-style: italic;")
         middle_box.addWidget(help_label)
 
-        # Connexions
+        # Connexions (on garde recompute, mais on gérera la visibilité des colonnes dedans)
         self.show_labels_alias.stateChanged.connect(self.recompute)
         self.show_constraint_types.stateChanged.connect(self.recompute)
 
@@ -722,7 +727,24 @@ class RefDialog2(QtGui.QDialog):
         self.tree.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._onTreeContextMenu)
 
-        self.tree.setHeaderHidden(True)
+        # --- Multi-colonnes propres ---
+        self.tree.setHeaderHidden(False)
+        self.tree.setColumnCount(5)
+        self.tree.setHeaderLabels(["Nom", "Label/Alias", "Valeur", "Contenu", "Type"])
+        self.tree.header().setStretchLastSection(True)
+
+        self.tree.header().setSectionsMovable(True)
+        self.tree.header().setSectionsClickable(True)
+        self.tree.header().setStretchLastSection(True)
+        self.tree.header().setSectionResizeMode(QtGui.QHeaderView.Interactive)
+        # Largeur minimale
+        self.tree.header().setMinimumSectionSize(30)
+        # étirer la dernière colonne
+        self.tree.header().setStretchLastSection(True)
+
+        self.tree.setStyleSheet("QTreeWidget::item:hover { background-color: #e0e0e0; }")
+        self.tree.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+
         layout.addWidget(self.tree)
 
         self.setLayout(layout)
@@ -750,92 +772,72 @@ class RefDialog2(QtGui.QDialog):
         self.recompute()
 
     # --------------------------------------------------------
-    # Construit le texte affiché dans l'arbre
+    # Colonnes : construction des 5 champs
     # --------------------------------------------------------
-    def enrich_label(self, ref, node):
+    def enrich_columns(self, ref, node):
         """
-        Construit le texte affiché dans l'arbre selon les cases cochées :
-        - labels / alias
-        - formule
-        - valeur
-        - type de contrainte
+        Construit les 5 colonnes :
+        0: Nom interne (datas.D3, Pad.Length, ...)
+        1: Label / alias
+        2: Valeur
+        3: Contenu (formule)
+        4: Type de contrainte
         """
-
         kind = node.get("kind")
 
-        # ------------------------------------------------------------
-        # 1) CELLULE SPREADSHEET
-        # ------------------------------------------------------------
+        nom = ref
+        alias = ""
+        valeur = ""
+        contenu = ""
+        ctype = ""
+
+        # Cellule de spreadsheet
         if kind == "cell":
-            sheet = node["sheet"]
-            cell = node["cell"]
-            alias = node.get("alias")
+            sheet = node.get("sheet")
+            cell = node.get("cell")
+            nom = f"{sheet}.{cell}" if sheet and cell else ref
+            alias = node.get("label") or node.get("alias") or (cell or "")
+            v = node.get("value")
+            if v is not None:
+                valeur = str(v)
+            f = node.get("formula")
+            if f:
+                contenu = str(f)
+            ct = node.get("constraint_type")
+            if ct:
+                ctype = str(ct)
 
-            # Nom interne : datas.D5
-            internal = f"{sheet}.{cell}"
-
-            # Label de la feuille
-            sheet_label = None
-            try:
-                sheet_obj = App.ActiveDocument.getObject(sheet)
-                if sheet_obj:
-                    sheet_label = sheet_obj.Label
-            except:
-                pass
-
-            # Nom avec label : datas(LabelDatas).D5
-            if sheet_label:
-                labeled = f"{sheet}({sheet_label}).{cell}"
-            else:
-                labeled = internal
-
-            # Choix simple : label/alias ou nom interne
-            base = labeled if self.show_labels_alias.isChecked() else internal
-
-            # Alias
-            if self.show_labels_alias.isChecked() and alias:
-                base += f" ({alias})"
-
-        # ------------------------------------------------------------
-        # 2) PROPRIÉTÉ D'OBJET FREECAD
-        # ------------------------------------------------------------
+        # Propriété d'objet FreeCAD
         elif kind == "property":
-            obj = node["object"]
-            prop = node["property"]
-            obj_label = node.get("label") or obj
+            obj = node.get("object")
+            prop = node.get("property")
+            nom = f"{obj}.{prop}" if obj and prop else ref
+            alias = node.get("label") or ""
+            v = node.get("value")
+            if v is not None:
+                valeur = str(v)
+            f = node.get("formula")
+            if f:
+                contenu = str(f)
+            ct = node.get("constraint_type")
+            if ct:
+                ctype = str(ct)
 
-            internal = f"{obj}.{prop}"
-            labeled = f"{obj}({obj_label}).{prop}"
-
-            base = labeled if self.show_labels_alias.isChecked() else internal
-
-        # ------------------------------------------------------------
-        # 3) AUTRE
-        # ------------------------------------------------------------
+        # Autre
         else:
-            base = ref
+            nom = ref
+            alias = node.get("label") or ""
+            v = node.get("value")
+            if v is not None:
+                valeur = str(v)
+            f = node.get("formula")
+            if f:
+                contenu = str(f)
+            ct = node.get("constraint_type")
+            if ct:
+                ctype = str(ct)
 
-        # ------------------------------------------------------------
-        # 4) Formule
-        # ------------------------------------------------------------
-        if self.show_formula.isChecked() and node.get("formula"):
-            base += f" — {tr('content')}: {node['formula']}"
-
-        # ------------------------------------------------------------
-        # 5) Valeur
-        # ------------------------------------------------------------
-        if self.show_value.isChecked() and node.get("value") is not None:
-            base += f" — {tr('value')}: {node['value']}"
-
-        # ------------------------------------------------------------
-        # 6) Type de contrainte
-        # ------------------------------------------------------------
-        if self.show_constraint_types.isChecked():
-            ctype = node.get("constraint_type")
-            if ctype:
-                base += f" — {tr('type')}: {ctype}"
-
-        return base
+        return [nom, alias, valeur, contenu, ctype]
 
     # --------------------------------------------------------
     # Sauvegarde / chargement INI
@@ -867,6 +869,38 @@ class RefDialog2(QtGui.QDialog):
         w = ui.getint("width", 600)
         h = ui.getint("height", 400)
         self.resize(w, h)
+
+        # --- Restaurer l'état des colonnes ---
+        header = self.tree.header()
+
+        # 1) Restaurer l'état du header (ordre, visibilité, tri)
+        if "header_state" in ui:
+            try:
+                state = QtCore.QByteArray.fromBase64(ui["header_state"].encode("utf-8"))
+                header.restoreState(state)
+            except:
+                pass
+
+        # 2) Forcer le mode interactif (sinon restoreState remet ResizeToContents)
+        header.setSectionResizeMode(QtGui.QHeaderView.Interactive)
+        header.setMinimumSectionSize(30)
+
+        # 3) Restaurer les largeurs de colonnes
+        if "column_widths" in ui:
+            widths = ui["column_widths"].split(",")
+            for i, cw in enumerate(widths):
+                try:
+                    self.tree.setColumnWidth(i, int(cw))
+                except:
+                    pass
+
+        if "column_widths" in ui:
+            widths = ui["column_widths"].split(",")
+            for i, cw in enumerate(widths):
+                try:
+                    self.tree.setColumnWidth(i, int(cw))
+                except:
+                    pass
 
         # --- Position ---
         x = ui.getint("pos_x", 100)
@@ -924,6 +958,15 @@ class RefDialog2(QtGui.QDialog):
         config["UI"]["pos_x"] = str(pos.x())
         config["UI"]["pos_y"] = str(pos.y())
 
+
+        # --- Ordre et état des colonnes ---
+        header_state = self.tree.header().saveState()
+        config["UI"]["header_state"] = header_state.toBase64().data().decode("utf-8")
+
+        # Sauvegarde des largeurs de colonnes
+        widths = [self.tree.columnWidth(i) for i in range(self.tree.columnCount())]
+        config["UI"]["column_widths"] = ",".join(str(w) for w in widths)
+
         # --- Écran ---
         try:
             screen = self.screen()
@@ -941,17 +984,55 @@ class RefDialog2(QtGui.QDialog):
         super().closeEvent(event)
 
     # --------------------------------------------------------
+    # Mise à jour visibilité des colonnes
+    # --------------------------------------------------------
+    def update_column_visibility(self):
+        # 0: Nom (toujours visible)
+        self.tree.setColumnHidden(1, not self.show_labels_alias.isChecked())      # Label/Alias
+        self.tree.setColumnHidden(2, not self.show_value.isChecked())            # Valeur
+        self.tree.setColumnHidden(3, not self.show_formula.isChecked())          # Contenu
+        self.tree.setColumnHidden(4, not self.show_constraint_types.isChecked()) # Type
+
+    # --------------------------------------------------------
     # RECOMPUTE
     # --------------------------------------------------------
     def recompute(self):
-        self.graph = build_graph()
+
+        # ------------------------------------------------------------
+        # 0) Vérifier si la sélection appartient à une autre feuille
+        # ------------------------------------------------------------
+        current_view = Gui.ActiveDocument.ActiveView
+        try:
+            new_sheet = current_view.getSheet()
+        except:
+            new_sheet = None
+
+        if new_sheet and new_sheet != self.sheet:
+            self.sheet = new_sheet
+            # IMPORTANT : reconstruire le graphe sur la nouvelle feuille
+            self.graph = build_graph()
+
+        # ------------------------------------------------------------
+        # 1) Focus sur la feuille active
+        # ------------------------------------------------------------
         self.sheet.ViewObject.doubleClicked()
 
+        # ------------------------------------------------------------
+        # 2) Mise à jour du titre
+        # ------------------------------------------------------------
         self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
 
+        # ------------------------------------------------------------
+        # 3) Nettoyage de l'arbre
+        # ------------------------------------------------------------
         self.tree.clear()
+
+        # ------------------------------------------------------------
+        # 4) Lire la sélection sur la feuille ACTUELLE
+        # ------------------------------------------------------------
         selected = self.sheet.ViewObject.getView().selectedCells()
         if not selected:
+            self.update_column_visibility()
             return
 
         addrs = []
@@ -963,6 +1044,7 @@ class RefDialog2(QtGui.QDialog):
 
         roots = [f"{self.sheet.Name}.{a}" for a in addrs if f"{self.sheet.Name}.{a}" in self.graph]
         if not roots:
+            self.update_column_visibility()
             return
 
         # Construction de l'arbre
@@ -980,9 +1062,10 @@ class RefDialog2(QtGui.QDialog):
         # Déplier automatiquement jusqu'au premier niveau réel
         self.set_expand_level(self.level_spin.value())
 
+        # Mettre à jour la visibilité des colonnes
+        self.update_column_visibility()
 
     # --- Fonctions de catégorisation ---
-
     def should_display(self, ref, root_ref, reachable, branch_direction):
         if reachable is None:
             reachable = self.graph.keys()
@@ -1001,10 +1084,6 @@ class RefDialog2(QtGui.QDialog):
             return True
 
         # 2) Descendants dans LA direction du sous-arbre
-        # ------------------------------------------------
-        # IMPORTANT : on ne mélange plus jamais les directions
-        # ------------------------------------------------
-
         if branch_direction == "parents":  # Branche Uses
             if self.filter_cells.isChecked():
                 if self.has_descendant_of_category(ref, "cell", "parents", reachable):
@@ -1071,14 +1150,10 @@ class RefDialog2(QtGui.QDialog):
         node = self.graph[ref]
         cat = self.get_node_category(node)
 
-
         # --- Direction parents (Uses) ---
         if direction == "parents":
-
-
             for p in self.graph[ref]["parents"]:
                 if p not in reachable:
-
                     continue
 
                 node_p = self.graph[p]
@@ -1087,13 +1162,11 @@ class RefDialog2(QtGui.QDialog):
                 if cat_p == category:
                     return True
 
-
                 if self.has_descendant_of_category(p, category, "parents", reachable, visited):
                     return True
 
         # --- Direction children (Used by) ---
         if direction == "children":
-
             for c in self.graph[ref]["children"]:
                 if c not in reachable:
                     continue
@@ -1102,15 +1175,12 @@ class RefDialog2(QtGui.QDialog):
                 cat_c = self.get_node_category(node_c)
 
                 if cat_c == category:
-
                     return True
 
                 if self.has_descendant_of_category(c, category, "children", reachable, visited):
-
                     return True
 
         return False
-
 
     # --------------------------------------------------------
     # BUILD TREE
@@ -1126,7 +1196,8 @@ class RefDialog2(QtGui.QDialog):
                 continue
 
             node = self.graph[p]
-            item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(p, node)])
+            cols = self.enrich_columns(p, node)
+            item = QtGui.QTreeWidgetItem(parent_item, cols)
 
             # --- Tooltip enrichi ---
             tooltip = f"Name : {node.get('ref', '')}"
@@ -1136,15 +1207,17 @@ class RefDialog2(QtGui.QDialog):
             else:
                 tooltip += f"\nLabel : {node.get('label', '')}"
 
-            tooltip += f"\n{tr('content')}: {node['formula']}"
-            tooltip += f"\n{tr('value')}: {node['value']}"
+            tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
+            tooltip += f"\n{tr('value')}: {node.get('value', '')}"
 
             ctype = node.get("constraint_type")
             if ctype:
-                tooltip += f"\n{tr('type')}: {ctype}"
+                tooltip += f"\nType: {ctype}"
                 tooltip += f"\n{tr('hint_constraint')}"
 
             item.setToolTip(0, tooltip)
+            # for col in range(self.tree.columnCount()):
+            #    item.setToolTip(col, tooltip)
 
             # Données internes pour clic droit
             if node["kind"] == "property" and node["property"].startswith("Constraints["):
@@ -1169,7 +1242,8 @@ class RefDialog2(QtGui.QDialog):
                 continue
 
             node = self.graph[c]
-            item = QtGui.QTreeWidgetItem(parent_item, [self.enrich_label(c, node)])
+            cols = self.enrich_columns(c, node)
+            item = QtGui.QTreeWidgetItem(parent_item, cols)
 
             # --- Tooltip enrichi ---
             tooltip = f"Name : {node.get('ref', '')}"
@@ -1179,14 +1253,16 @@ class RefDialog2(QtGui.QDialog):
             else:
                 tooltip += f"\nLabel : {node.get('label', '')}"
 
-            tooltip += f"\n{tr('content')}: {node['formula']}"
-            tooltip += f"\n{tr('value')}: {node['value']}"
+            tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
+            tooltip += f"\n{tr('value')}: {node.get('value', '')}"
 
             ctype = node.get("constraint_type")
             if ctype:
-                tooltip += f"\n{tr('type')}: {ctype}"
+                tooltip += f"\nType: {ctype}"
                 tooltip += f"\n{tr('hint_constraint')}"
 
+            #for col in range(self.tree.columnCount()):
+            #    item.setToolTip(col, tooltip)
             item.setToolTip(0, tooltip)
 
             # Données internes pour clic droit
@@ -1246,16 +1322,12 @@ class RefDialog2(QtGui.QDialog):
         # ------------------------------------------------------------
         # 3) Création de l’item racine
         # ------------------------------------------------------------
-        root_item = QtGui.QTreeWidgetItem(
-            self.tree,
-            [self.enrich_label(root, self.graph[root])]
-        )
+        cols_root = self.enrich_columns(root, self.graph[root])
+        root_item = QtGui.QTreeWidgetItem(self.tree, cols_root)
 
         node = self.graph[root]
 
-        # ------------------------------------------------------------
-        # 3b) Tooltip enrichi (NOUVEAU)
-        # ------------------------------------------------------------
+        # Tooltip enrichi
         tooltip = f"Name : {node.get('ref', '')}"
 
         if node.get("kind") == "cell":
@@ -1271,7 +1343,7 @@ class RefDialog2(QtGui.QDialog):
 
         ctype = node.get("constraint_type")
         if ctype:
-            tooltip += f"\n{tr('type')}: {ctype}"
+            tooltip += f"\nType: {ctype}"
             tooltip += f"\n{tr('hint_constraint')}"
 
         root_item.setToolTip(0, tooltip)
@@ -1280,8 +1352,8 @@ class RefDialog2(QtGui.QDialog):
         # ------------------------------------------------------------
         # 4) Section IN (Uses)
         # ------------------------------------------------------------
-        if allow_parents:
-            in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses")])
+        if self.cb_out.isChecked():  # <-- correction : on utilise la case, pas allow_parents
+            in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses"), "", "", "", ""])
             self.add_in_recursive(in_item, root, reachable, root)
 
             if in_item.childCount() == 0:
@@ -1290,8 +1362,8 @@ class RefDialog2(QtGui.QDialog):
         # ------------------------------------------------------------
         # 5) Section OUT (Used by)
         # ------------------------------------------------------------
-        if allow_children:
-            out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by")])
+        if self.cb_in.isChecked():  # <-- correction : on utilise la case, pas allow_children
+            out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by"), "", "", "", ""])
             self.add_out_recursive(out_item, root, reachable, root)
 
             if out_item.childCount() == 0:
@@ -1315,7 +1387,7 @@ class RefDialog2(QtGui.QDialog):
         return max(1, max_depth - 1)
 
     def set_expand_level(self, level):
-    #  Applique un niveau d'expansion à l'arbre.
+        # Applique un niveau d'expansion à l'arbre.
 
         self.last_level = level
 
@@ -1329,6 +1401,7 @@ class RefDialog2(QtGui.QDialog):
             # Parcours des enfants
             for i in range(item.childCount()):
                 rec(item.child(i), depth + 1)
+
         # Appliquer à chaque racine
         for i in range(self.tree.topLevelItemCount()):
             rec(self.tree.topLevelItem(i), 0)
@@ -1366,7 +1439,7 @@ class RefDialog2(QtGui.QDialog):
         self.level_spin.setValue(DEFAULT_COLLAPSE_LEVEL)
 
     # --------------------------------------------------------
-    # Double-clic dans l'arbre : sélectionner contrainte + focus Spreadsheet
+    # Clic droit dans l'arbre : sélectionner contrainte + focus Spreadsheet
     # --------------------------------------------------------
     def onTreeRightClick(self, item, column):
 
@@ -1379,7 +1452,6 @@ class RefDialog2(QtGui.QDialog):
         doc = App.ActiveDocument
         sketch = doc.getObject(sketch_name)
 
-        # Vérifier si un objet est déjà en édition
         # Vérifier si un objet est déjà en édition
         vp = Gui.ActiveDocument.getInEdit()
 
