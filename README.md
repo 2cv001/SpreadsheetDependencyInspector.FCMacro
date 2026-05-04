@@ -21,6 +21,7 @@ The expand/collapse button lets you expand or collapse the whole tree. You can a
 
 
 **Français**
+Voir le wiki : https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector
 La macro affiche pour une sélection de cellules, les dépendances entre les cellules des spreadsheet et même entre une cellule et les propriétés des objets. Le tout sous forme d'un arbre dépliable affichant le nom de la cellule, son alias, sa formule et sa valeur.
 3 mode d'affichage
 - les cellule qui utilisent d'autres cellules
