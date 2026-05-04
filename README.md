@@ -1,5 +1,7 @@
 Traduction en Français plus bas
 
+Have a look to the wiki https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector
+
 The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties. Everything is shown as an expandable tree that displays the cell name, its alias, its formula, and its value.
 Three display modes:
 - Cells that use other cells
