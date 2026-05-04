@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/05/04 17:14"  # YYYY/MM/DD
+__Date__ = "2026/05/05 00:19"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -1769,8 +1769,15 @@ if sheet is None:
         tr("error_title"),
         tr("error_select_cells")
     )
-
 else:
-    QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
-    dlg = RefDialog2(sheet)
-    dlg.show()   # surtout pas dlg.exec()
+    selected = sheet.ViewObject.getView().selectedCells()
+    if not selected:
+        QtGui.QMessageBox.information(
+            None,
+            tr("no_selection_title"),
+            tr("no_selection_message")
+        )
+    else:
+        QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
+        dlg = RefDialog2(sheet)
+        dlg.show()
