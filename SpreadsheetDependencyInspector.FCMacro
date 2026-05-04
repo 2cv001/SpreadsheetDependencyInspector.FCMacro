@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/05/04 16:24"  # YYYY/MM/DD
+__Date__ = "2026/05/04 17:14"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -84,7 +84,7 @@ TRANSLATIONS = {
         "show_labels_alias": "Labels et alias",
         "show_constraint_types": "Types de contrainte",
         "lines_shown": "Lignes",
-        "hint_open_sketch": "Clic droit sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée",
+        "hint_open_sketch": "Duble clic sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée",
 
         # Sections arbre
         "uses": "Utilise",
@@ -102,7 +102,7 @@ TRANSLATIONS = {
         "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
         "sketch_not_open_title": "Sketch non ouvert",
         "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
-        "hint_constraint": "Clic droit sur la ligne de la contrainte pour ouvrir le sketch, voir et sélectionner la contrainte",
+        "hint_constraint": "Double clic sur la ligne de la contrainte pour ouvrir le sketch, voir et sélectionner la contrainte",
         "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
     },
 
@@ -130,7 +130,7 @@ TRANSLATIONS = {
         "show_labels_alias": "labels and aliases",
         "show_constraint_types": "Constraint types",
         "middle_group": "Columns",
-        "hint_open_sketch": "Right‑click a constraint row to open the sketch with the constraint selected",
+        "hint_open_sketch": "Double‑click a constraint row to open the sketch with the constraint selected",
 
         # Sections arbre
         "uses": "Uses",
@@ -148,7 +148,7 @@ TRANSLATIONS = {
         "error_select_cells": "Select cells in a Spreadsheet.",
         "sketch_not_open_title": "Sketch not open",
         "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
-        "hint_constraint": "Right‑click the constraint’s row to open the sketch, view the constraint, and select it.",
+        "hint_constraint": "Double‑click the constraint’s row to open the sketch, view the constraint, and select it.",
         "spreadsheet_not_active": "The Spreadsheet must be the active window.",
     }
 }
