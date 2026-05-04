@@ -75,7 +75,7 @@ TRANSLATIONS = {
 
         # Cases à cocher
         "middle_group": "Colonnes",
-        "show_formula": "Contenus",
+        "show_formula": "Expression",
         "show_value": "Valeurs",
         "filter_cells": "Cellules",
         "filter_constraints": "Contraintes",
@@ -84,7 +84,8 @@ TRANSLATIONS = {
         "show_labels_alias": "Labels et alias",
         "show_constraint_types": "Types de contrainte",
         "lines_shown": "Lignes",
-        "hint_open_sketch": "Duble clic sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée",
+        "hint_open_sketch": "Double clic sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée."
+            "Simple clic pour éditer un lLbel/Alias ou une expression",
 
         # Sections arbre
         "uses": "Utilise",
@@ -97,12 +98,22 @@ TRANSLATIONS = {
         "value": "valeur",
         "content": "contenu",
 
+        # Titre des colonnes
+        "col_name": "Nom",
+        "col_label": "Label/Alias",
+        "col_value": "Valeur",
+        "col_content": "Contenu",
+        "col_type": "Type",
+
+
         # Divers
         "error_title": "Erreur",
         "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
         "sketch_not_open_title": "Sketch non ouvert",
         "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
-        "hint_constraint": "Double clic sur la ligne de la contrainte pour ouvrir le sketch, voir et sélectionner la contrainte",
+        "hint_constraint":
+            "Double clic sur la ligne de la contrainte pour ouvrir le sketch, "
+            " voir et sélectionner la contrainte",
         "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
     },
 
@@ -130,7 +141,8 @@ TRANSLATIONS = {
         "show_labels_alias": "labels and aliases",
         "show_constraint_types": "Constraint types",
         "middle_group": "Columns",
-        "hint_open_sketch": "Double‑click a constraint row to open the sketch with the constraint selected",
+        "hint_open_sketch": "Double‑click a constraint row to open the sketch with the constraint selected."
+            " Simple click to edit a Label/Alias or an expression.",
 
         # Sections arbre
         "uses": "Uses",
@@ -142,6 +154,14 @@ TRANSLATIONS = {
         "expression": "expression",
         "value": "value",
         "content": "content",
+
+        # Titre des colonnes
+        "col_name": "Name",
+        "col_label": "Label/Alias",
+        "col_value": "Value",
+        "col_content": "Expression",
+        "col_type": "Type",
+
 
         #Divers
         "error_title": "Error",
@@ -721,7 +741,14 @@ class RefDialog2(QtGui.QDialog):
 
         self.tree.setHeaderHidden(False)
         self.tree.setColumnCount(5)
-        self.tree.setHeaderLabels(["Nom", "Label/Alias", "Valeur", "Contenu", "Type"])
+        self.tree.setHeaderLabels([
+            tr("col_name"),
+            tr("col_label"),
+            tr("col_value"),
+            tr("col_content"),
+            tr("col_type")
+        ])
+
         self.tree.header().setStretchLastSection(True)
 
         self.tree.header().setSectionsMovable(True)
@@ -1253,7 +1280,7 @@ class RefDialog2(QtGui.QDialog):
             ctype = node.get("constraint_type")
             if ctype:
                 tooltip += f"\nType: {ctype}"
-                tooltip += f"\n{tr('hint_constraint')}"
+                #tooltip += f"\n{tr('hint_constraint')}"
 
             for col in range(self.tree.columnCount()):
                 item.setToolTip(col, tooltip)
@@ -1302,7 +1329,7 @@ class RefDialog2(QtGui.QDialog):
             ctype = node.get("constraint_type")
             if ctype:
                 tooltip += f"\nType: {ctype}"
-                tooltip += f"\n{tr('hint_constraint')}"
+            #    tooltip += f"\n{tr('hint_constraint')}"
 
             for col in range(self.tree.columnCount()):
                 item.setToolTip(col, tooltip)
@@ -1399,7 +1426,7 @@ class RefDialog2(QtGui.QDialog):
             ctype = node.get("constraint_type")
             if ctype:
                 tooltip += f"\nType: {ctype}"
-                tooltip += f"\n{tr('hint_constraint')}"
+                #tooltip += f"\n{tr('hint_constraint')}"
 
             for col in range(self.tree.columnCount()):
                 root_item.setToolTip(col, tooltip)
