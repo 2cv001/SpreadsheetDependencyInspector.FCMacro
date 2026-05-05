@@ -76,7 +76,7 @@ TRANSLATIONS = {
         # Cases à cocher
         "middle_group": "Colonnes",
         "show_formula": "Expression",
-        "show_value": "résultat",
+        "show_value": "Résultat",
         "filter_cells": "Cellules",
         "filter_constraints": "Contraintes",
         "filter_others": "Autres",
@@ -96,13 +96,13 @@ TRANSLATIONS = {
         # Enrichissement
         "expression": "expression",
         "value": "résultat",
-        "content": "contenu",
+        "content": "expression",
 
         # Titre des colonnes
         "col_name": "Nom",
         "col_label": "Label/Alias",
         "col_value": "Résultat",
-        "col_content": "Contenu",
+        "col_content": "Expression",
         "col_type": "Type",
 
 
@@ -141,7 +141,7 @@ TRANSLATIONS = {
 
         # Cases à cocher
         "lines_shown": "Lines",
-        "show_formula": "Contents",
+        "show_formula": "Expressions",
         "show_value": "Results",
         "filter_cells": "Cells",
         "filter_constraints": "Constraints",
@@ -162,7 +162,7 @@ TRANSLATIONS = {
         # Enrichissement
         "expression": "expression",
         "value": "result",
-        "content": "content",
+        "content": "expression",
 
         # Titre des colonnes
         "col_name": "Name",
