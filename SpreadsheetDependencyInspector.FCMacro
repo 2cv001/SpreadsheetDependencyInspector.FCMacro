@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/05/05 00:19"  # YYYY/MM/DD
+__Date__ = "2026/05/05 19:15"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -76,7 +76,7 @@ TRANSLATIONS = {
         # Cases à cocher
         "middle_group": "Colonnes",
         "show_formula": "Expression",
-        "show_value": "Valeurs",
+        "show_value": "résultat",
         "filter_cells": "Cellules",
         "filter_constraints": "Contraintes",
         "filter_others": "Autres",
@@ -95,13 +95,13 @@ TRANSLATIONS = {
 
         # Enrichissement
         "expression": "expression",
-        "value": "valeur",
+        "value": "résultat",
         "content": "contenu",
 
         # Titre des colonnes
         "col_name": "Nom",
         "col_label": "Label/Alias",
-        "col_value": "Valeur",
+        "col_value": "Résultat",
         "col_content": "Contenu",
         "col_type": "Type",
 
@@ -117,6 +117,12 @@ TRANSLATIONS = {
         "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
         "no_selection_title": "Aucune sélection",
         "no_selection_message": "Sélectionnez au moins une cellule dans le Spreadsheet.",
+        "object_invalid_title": "Erreur",
+        "object_invalid_msg": "L’objet est dans un état invalide. Votre modification n’a pas été appliquée.",
+        "spreadsheet_invalid_title": "Erreur Spreadsheet",
+        "spreadsheet_invalid_msg": "Le Spreadsheet est dans un état invalide. Votre modification n’a pas été appliquée.",
+
+
 
     },
 
@@ -136,7 +142,7 @@ TRANSLATIONS = {
         # Cases à cocher
         "lines_shown": "Lines",
         "show_formula": "Contents",
-        "show_value": "Values",
+        "show_value": "Results",
         "filter_cells": "Cells",
         "filter_constraints": "Constraints",
         "filter_others": "Others",
@@ -155,13 +161,13 @@ TRANSLATIONS = {
 
         # Enrichissement
         "expression": "expression",
-        "value": "value",
+        "value": "result",
         "content": "content",
 
         # Titre des colonnes
         "col_name": "Name",
         "col_label": "Label/Alias",
-        "col_value": "Value",
+        "col_value": "Result",
         "col_content": "Expression",
         "col_type": "Type",
 
@@ -175,6 +181,12 @@ TRANSLATIONS = {
         "spreadsheet_not_active": "The Spreadsheet must be the active window.",
         "no_selection_title": "No selection",
         "no_selection_message": "Select at least one cell in the Spreadsheet.",
+        "object_invalid_title": "Error",
+        "object_invalid_msg": "The object is in an invalid state. Your change was not applied.",
+        "spreadsheet_invalid_title": "Spreadsheet error",
+        "spreadsheet_invalid_msg": "The spreadsheet is in an invalid state. Your change was not applied.",
+
+
 
     }
 }
@@ -821,7 +833,7 @@ class RefDialog2(QtGui.QDialog):
         Construit les 5 colonnes :
         0: Nom interne (datas.D3, Pad.Length, ...)
         1: Label / alias
-        2: Valeur
+        2: résultat
         3: Contenu (formule)
         4: Type de contrainte
         """
@@ -1658,22 +1670,40 @@ class RefDialog2(QtGui.QDialog):
             # === FORMULE SUR CONTRAINTE / PROPRIÉTÉ ======================
             # ============================================================
             if kind == "property" and column == 3:
+                warning_shown = False
                 try:
-                    obj_name = node.get("object")
-                    prop = node.get("property")
+                    raw_name = item.text(0)
+                    obj_name = raw_name.split(".")[0]  # <-- indispensable
                     obj = App.ActiveDocument.getObject(obj_name)
 
+                    prop = node.get("property")
                     expr = new_value.lstrip("=")
 
                     # --- Appliquer la formule ---
                     obj.setExpression(prop, expr)
                     App.ActiveDocument.recompute()
 
+                    if hasattr(obj, "State") and "Invalid" in obj.State:
+                        warning_shown = True
+                        QtGui.QMessageBox.warning(
+                            None,
+                            tr("object_invalid_title"),
+                            tr("object_invalid_msg")
+                        )
+
+                        raise ValueError("Object became invalid")
+
                     # Si on arrive ici sans exception, on considère que c'est accepté
                     self.recompute()
 
                 except Exception as e:
                     print("Formula PROPERTY ERROR:", e)
+                    if not warning_shown: # on affiche ce warning que si on ne l'a pas déjà fait
+                        QtGui.QMessageBox.warning(
+                            None,
+                            tr("object_invalid_title"),
+                            tr("object_invalid_msg")
+                        )
 
                     # --- RESTAURATION ---
                     old_expr = old_value.lstrip("=")
@@ -1728,7 +1758,18 @@ class RefDialog2(QtGui.QDialog):
                     sheet.set(local, new_value)
                     sheet.recompute()
 
-                    # --- Vérifier si FreeCAD a accepté la formule ---
+                    # --- Vérifier l'état du Spreadsheet ---
+                    state = sheet.State
+                    if "Invalid" in state:
+                        QtGui.QMessageBox.warning(
+                            None,
+                            tr("spreadsheet_invalid_title"),
+                            tr("spreadsheet_invalid_msg")
+                        )
+
+                        raise ValueError("Spreadsheet became invalid")
+
+                    # --- Vérifier si FreeCAD a mis un ERR dans la cellule ---
                     val = sheet.get(local)
                     if isinstance(val, str) and val.startswith("ERR"):
                         raise ValueError("Invalid formula")
@@ -1751,6 +1792,7 @@ class RefDialog2(QtGui.QDialog):
                     self._editing = False
 
                 return
+
 
         finally:
             self._editing = False
