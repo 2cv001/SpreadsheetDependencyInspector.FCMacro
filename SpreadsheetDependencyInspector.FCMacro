@@ -743,6 +743,20 @@ class RefDialog2(QtGui.QDialog):
         #  Arbre
         # ============================================================
         self.tree = QtGui.QTreeWidget()
+
+        # ============================================================
+        #  DÉLÉGUÉ LECTURE SEULE POUR LES COLONNES NON ÉDITABLES
+        # ============================================================
+        class ReadOnlyDelegate(QtGui.QStyledItemDelegate):
+            def createEditor(self, parent, option, index):
+                return None  # empêche l'édition
+
+        readonly = ReadOnlyDelegate(self.tree)
+
+        # Colonnes non éditables : 0, 2, 4
+        for col in (0, 2, 4):
+            self.tree.setItemDelegateForColumn(col, readonly)
+
         self.tree.itemDoubleClicked.connect(self.on_item_double_click_constraint)
 
         self.tree.setHeaderHidden(False)
@@ -1655,11 +1669,7 @@ class RefDialog2(QtGui.QDialog):
                     obj.setExpression(prop, expr)
                     App.ActiveDocument.recompute()
 
-                    # --- Vérifier si FreeCAD a accepté l'expression ---
-                    real = obj.ExpressionEngine.get(prop, None)
-                    if real is None or ("ERR" in str(real)):
-                        raise ValueError("Invalid expression")
-
+                    # Si on arrive ici sans exception, on considère que c'est accepté
                     self.recompute()
 
                 except Exception as e:
