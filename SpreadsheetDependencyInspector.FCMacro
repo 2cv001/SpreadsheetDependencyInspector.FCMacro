@@ -115,6 +115,9 @@ TRANSLATIONS = {
             "Double clic sur la ligne de la contrainte pour ouvrir le sketch, "
             " voir et sélectionner la contrainte",
         "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
+        "no_selection_title": "Aucune sélection",
+        "no_selection_message": "Sélectionnez au moins une cellule dans le Spreadsheet.",
+
     },
 
     "en": {
@@ -170,6 +173,9 @@ TRANSLATIONS = {
         "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
         "hint_constraint": "Double‑click the constraint’s row to open the sketch, view the constraint, and select it.",
         "spreadsheet_not_active": "The Spreadsheet must be the active window.",
+        "no_selection_title": "No selection",
+        "no_selection_message": "Select at least one cell in the Spreadsheet.",
+
     }
 }
 
