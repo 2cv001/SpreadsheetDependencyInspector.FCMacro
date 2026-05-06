@@ -703,36 +703,46 @@ class RefDialog2(QtGui.QDialog):
         self.setMinimumWidth(400)
 
         layout = QtGui.QVBoxLayout()
+        layout.setSpacing(0)
+        layout.setContentsMargins(10, 0, 10, 10)
 
         # ============================================================
         #  LIGNES VUES : OUT/IN + filtres
         # ============================================================
         top_line = QtGui.QHBoxLayout()
 
-        group_lines = QtGui.QGroupBox(tr("lines_shown"))
-        modes_box = QtGui.QVBoxLayout()
-        group_lines.setLayout(modes_box)
 
+        modes_box = QtGui.QVBoxLayout()
         modes_box.setSpacing(0)
-        modes_box.setContentsMargins(5, 5, 5, 5)
+        modes_box.setContentsMargins(0, 0, 0, 0)
+
+        group_lines = QtGui.QGroupBox(tr("lines_shown"))
+        group_lines.setLayout(modes_box)
+        group_lines.setContentsMargins(0, 0, 0, 0)
 
         self.cb_out = QtGui.QCheckBox(tr("mode_out"))
         self.cb_out.setChecked(True)
+        self.cb_out.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
 
         self.cb_in = QtGui.QCheckBox(tr("mode_in"))
         self.cb_in.setChecked(True)
+        self.cb_in.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
 
         modes_box.addWidget(self.cb_out)
         modes_box.addWidget(self.cb_in)
 
         self.filter_cells = QtGui.QCheckBox(tr("filter_cells"))
-        self.filter_constraints = QtGui.QCheckBox(tr("filter_constraints"))
-        self.filter_others = QtGui.QCheckBox(tr("filter_others"))
-
         self.filter_cells.setChecked(True)
+        self.filter_cells.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
+
+        self.filter_constraints = QtGui.QCheckBox(tr("filter_constraints"))
         self.filter_constraints.setChecked(True)
-        self.filter_others.setChecked(True)
+        self.filter_constraints.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
         self.filter_constraints.setToolTip(tr("hint_constraint"))
+
+        self.filter_others = QtGui.QCheckBox(tr("filter_others"))
+        self.filter_others.setChecked(True)
+        self.filter_others.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
 
         modes_box.addWidget(self.filter_cells)
         modes_box.addWidget(self.filter_constraints)
@@ -743,6 +753,7 @@ class RefDialog2(QtGui.QDialog):
         self.filter_others.toggled.connect(self.on_change_coche)
 
         top_line.addWidget(group_lines)
+        top_line.addSpacing(5)
 
         # ============================================================
         #  Colonne du milieu : options d'affichage
@@ -756,7 +767,7 @@ class RefDialog2(QtGui.QDialog):
         group_middle = QtGui.QGroupBox(tr("middle_group"))
         middle_box = QtGui.QVBoxLayout()
         middle_box.setSpacing(0)
-        middle_box.setContentsMargins(5, 5, 5, 5)
+        middle_box.setContentsMargins(0, 0, 5, 0)
         group_middle.setLayout(middle_box)
 
         middle_box.addWidget(self.show_labels_alias)
@@ -777,6 +788,7 @@ class RefDialog2(QtGui.QDialog):
         # ============================================================
         right_box = QtGui.QVBoxLayout()
         right_box.setAlignment(QtCore.Qt.AlignTop)
+        right_box.setSpacing(10)
 
         self.btn_refresh = QtGui.QPushButton()
         self.btn_refresh.setMaximumWidth(32)
@@ -802,6 +814,7 @@ class RefDialog2(QtGui.QDialog):
         right_box.addWidget(self.btn_collapse_all)
 
         top_line.addWidget(group_middle)
+        top_line.addSpacing(5)
         top_line.addLayout(right_box)
 
         layout.addLayout(top_line)
