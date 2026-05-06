@@ -1728,7 +1728,8 @@ class RefDialog2(QtGui.QDialog):
 
                         keep_invalid = ask_keep_invalid_change(
                             tr("object_invalid_title"),
-                            tr("object_invalid_msg")
+                            tr("object_invalid_msg"),
+                            allow_keep=False
                         )
 
                         if not keep_invalid:
@@ -1750,7 +1751,8 @@ class RefDialog2(QtGui.QDialog):
                         warning_shown = True
                         keep_invalid = ask_keep_invalid_change(
                             tr("object_invalid_title"),
-                            tr("object_invalid_msg")
+                            tr("object_invalid_msg"),
+                            allow_keep = False
                         )
 
                         if not keep_invalid:
@@ -1771,7 +1773,8 @@ class RefDialog2(QtGui.QDialog):
                     if not warning_shown:
                         keep_invalid = ask_keep_invalid_change(
                             tr("object_invalid_title"),
-                            tr("object_invalid_msg")
+                            tr("object_invalid_msg"),
+                            allow_keep=False
                         )
                         if keep_invalid:
                             self.recompute()
