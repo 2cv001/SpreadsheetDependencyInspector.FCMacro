@@ -1,1 +1,1917 @@
+# SpreadsheetDependencyInspector.FCMacro
 
+__Name__ = "Spreadsheet Dependency Inspector"
+__Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
+__Author__ = "2cv001"
+__Title__ = "Spreadsheet Dependency Inspector"
+__Date__ = "2026/05/05 19:15"  # YYYY/MM/DD
+__Version__ = __Date__
+__Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
+__Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
+__License__ = "Apache-2.0"
+# https://wiki.freecad.org/File:SpreadsheetDependencyInspector.png
+
+import xml.etree.ElementTree as ET
+import re
+import os
+from PySide import QtGui, QtCore
+import configparser
+import FreeCAD as App
+import FreeCADGui as Gui
+
+# Nom du fichier INI
+INI_FILENAME = "SpreadsheetDependencyInspector.ini"
+# Chemin complet vers le fichier INI
+MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
+INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
+# Niveau utilisé par le bouton "Tout replier"
+DEFAULT_COLLAPSE_LEVEL = 1
+# Niveau initial au lancement de la macro
+INITIAL_LEVEL = 2
+
+
+# Détermine la langue de l’utilisateur à partir de FreeCADGui
+def get_user_language():
+    try:
+        locale = FreeCADGui.getLocale().lower()
+        # Normalisation
+        if locale.startswith("fr") or "french" in locale:
+            return "fr"
+        if locale.startswith("en") or "english" in locale:
+            return "en"
+        '''
+        if locale.startswith("de") or "german" in locale:
+            return "de"
+        if locale.startswith("es") or "spanish" in locale:
+            return "es"
+        if locale.startswith("it") or "italian" in locale:
+            return "it"
+        '''
+        # Fallback
+        return "en"
+    except Exception:
+        return "en"
+
+
+# Traduit une clé donnée selon la langue utilisateur
+def tr(key):
+    lang = get_user_language()
+    return TRANSLATIONS.get(lang, TRANSLATIONS["en"]).get(key, key)
+
+
+TRANSLATIONS = {
+    "fr": {
+        "title": "Analyse des références (Spreadsheet + Objets FreeCAD)",
+
+        # Modes
+        "mode_out": "Utilise",
+        "mode_in": "Est utilisé par",
+
+        # Boutons
+        "btn_expand": "Tout déplier",
+        "btn_collapse": "Tout replier",
+        "btn_refresh_tt": "Relancer l’analyse (suite à un changement de sélection, une modification du spreadsheet…)",
+        "level_prefix": "Niveau: ",
+
+        # Cases à cocher
+        "middle_group": "Colonnes",
+        "show_formula": "Expression",
+        "show_value": "Résultat",
+        "filter_cells": "Cellules",
+        "filter_constraints": "Contraintes",
+        "filter_others": "Autres",
+        "show_names": "Noms",
+        "show_labels_alias": "Labels et alias",
+        "show_constraint_types": "Types de contrainte",
+        "lines_shown": "Lignes",
+        "hint_open_sketch": "Double clic sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée."
+            "Simple clic pour éditer un lLbel/Alias ou une expression",
+
+        # Sections arbre
+        "uses": "Utilise",
+        "used_by": "Est utilisé par",
+        "content_of": "Contenu de",
+        "expression_of": "Expression de",
+
+        # Enrichissement
+        "expression": "expression",
+        "value": "résultat",
+        "content": "expression",
+
+        # Titre des colonnes
+        "col_name": "Nom",
+        "col_label": "Label/Alias",
+        "col_value": "Résultat",
+        "col_content": "Expression",
+        "col_type": "Type",
+
+
+        # Divers
+        "error_title": "Erreur",
+        "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
+        "sketch_not_open_title": "Sketch non ouvert",
+        "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
+        "hint_constraint":
+            "Double clic sur la ligne de la contrainte pour ouvrir le sketch, "
+            " voir et sélectionner la contrainte",
+        "spreadsheet_not_active": "Le Spreadsheet doit être la fenêtre active.",
+        "no_selection_title": "Aucune sélection",
+        "no_selection_message": "Sélectionnez au moins une cellule dans le Spreadsheet.",
+        "object_invalid_title": "Erreur",
+        "object_invalid_msg": "L’objet est dans un état invalide. Votre modification n’a pas été appliquée.",
+        "spreadsheet_invalid_title": "Erreur Spreadsheet",
+        "spreadsheet_invalid_msg": "Le Spreadsheet est dans un état invalide. Votre modification n’a pas été appliquée.",
+
+        # boite de dialogue accepter ou pas et si erreur expression
+        "btn_cancel": "Annuler",
+        "btn_accept_anyway": "Accepter quand même",
+        "object_invalid_expression_msg": "L’expression est invalide. Vérifiez la syntaxe.",
+
+
+
+    },
+
+    "en": {
+        "title": "Reference analysis (Spreadsheet + FreeCAD objects)",
+
+        # Modes
+        "mode_out": "Uses",
+        "mode_in": "Used by",
+
+        # Boutons
+        "btn_expand": "Expand all",
+        "btn_collapse": "Collapse all",
+        "btn_refresh_tt": "Re-run analysis (after a selection change or a spreadsheet modification…)",
+        "level_prefix": "Level: ",
+
+        # Cases à cocher
+        "lines_shown": "Lines",
+        "show_formula": "Expressions",
+        "show_value": "Results",
+        "filter_cells": "Cells",
+        "filter_constraints": "Constraints",
+        "filter_others": "Others",
+        "show_names": "Names",
+        "show_labels_alias": "labels and aliases",
+        "show_constraint_types": "Constraint types",
+        "middle_group": "Columns",
+        "hint_open_sketch": "Double‑click a constraint row to open the sketch with the constraint selected."
+            " Simple click to edit a Label/Alias or an expression.",
+
+        # Sections arbre
+        "uses": "Uses",
+        "used_by": "Used by",
+        "content_of": "Content of",
+        "expression_of": "Expression of",
+
+        # Enrichissement
+        "expression": "expression",
+        "value": "result",
+        "content": "expression",
+
+        # Titre des colonnes
+        "col_name": "Name",
+        "col_label": "Label/Alias",
+        "col_value": "Result",
+        "col_content": "Expression",
+        "col_type": "Type",
+
+
+        #Divers
+        "error_title": "Error",
+        "error_select_cells": "Select cells in a Spreadsheet.",
+        "sketch_not_open_title": "Sketch not open",
+        "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
+        "hint_constraint": "Double‑click the constraint’s row to open the sketch, view the constraint, and select it.",
+        "spreadsheet_not_active": "The Spreadsheet must be the active window.",
+        "no_selection_title": "No selection",
+        "no_selection_message": "Select at least one cell in the Spreadsheet.",
+        "object_invalid_title": "Error",
+        "object_invalid_msg": "The object is in an invalid state. Your change was not applied.",
+        "spreadsheet_invalid_title": "Spreadsheet error",
+        "spreadsheet_invalid_msg": "The spreadsheet is in an invalid state. Your change was not applied.",
+        "btn_cancel": "Cancel",
+        "btn_accept_anyway": "Accept anyway",
+        "object_invalid_expression_msg": "The expression is invalid. Check the syntax.",
+
+
+    }
+}
+
+
+def get_column(cell):
+    return ''.join([c for c in cell if not c.isdigit()])
+
+
+def get_row(cell):
+    row = ''.join([c for c in cell if c.isdigit()])
+    if row == '':
+        row = '1'
+    return int(row)
+
+
+def get_col_index(col_letters):
+    col = 0
+    for ch in col_letters:
+        col = col * 26 + (ord(ch) - ord('A') + 1)
+    return col
+
+
+def addr_to_row_col(addr):
+    col_letters = get_column(addr)
+    row = get_row(addr)
+    col = get_col_index(col_letters)
+    return row, col
+
+
+def cell_to_addr(row, col):
+    # col: 1-based index
+    letters = ""
+    while col > 0:
+        col, rem = divmod(col - 1, 26)
+        letters = chr(ord('A') + rem) + letters
+    return f"{letters}{row}"
+
+
+def build_alias_map_for_all_sheets():
+    alias_map = {}
+
+    for sh in App.ActiveDocument.findObjects("Spreadsheet::Sheet"):
+        sheet_name = sh.Name
+        alias_map[sheet_name] = {}
+
+        xml = sh.cells.Content
+        if not xml:
+            continue
+
+        root = ET.fromstring(xml)
+
+        for cell in root.findall("Cell"):
+            addr = cell.get("address")
+            alias = cell.get("alias")
+
+            if alias:
+                full_ref = f"{sheet_name}.{addr}"
+                alias_map[sheet_name][alias] = full_ref
+
+    return alias_map
+
+
+def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
+    if not formula:
+        return set()
+
+    formula = str(formula)
+    refs = set()
+
+    # 1) Références avec label : <<Label>>.xxx
+    for r in re.findall(r"<<[^>]+>>\.[A-Za-z0-9_\.]+", formula):
+        refs.add(r)
+
+    # 2) Propriétés d'objet : Pad.Length, Sketch.Constraints[33], Pad.Placement.Base.x
+    for r in re.findall(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_\[\]]+)+", formula):
+        refs.add(r)
+
+    # 3) Cellules simples : A12, AA14
+    for r in re.findall(r"\b[A-Z]+[0-9]+\b", formula):
+        refs.add(r)
+
+    # 4) Plages : A1:B5
+    for r in re.findall(r"\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b", formula):
+        refs.add(r[0] + ":" + r[1])
+
+    # 5) 🔥 Détection des alias (Longueur, Largeur, etc.)
+    tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", formula)
+
+    sheet_aliases = alias_map.get(sheet_name, {})
+
+    for t in tokens:
+        if t in sheet_aliases:
+            refs.add(sheet_aliases[t])
+
+    return refs
+
+
+def openSketchInEditMode(sketch):
+    """
+    Ouvre un sketch en mode édition.
+    Retourne :
+        True  → ouverture OK
+        False → aucune vue 3D ouverte ou ouverture impossible
+    """
+
+    if sketch is None:
+        return False
+
+    # Vérifier si une vue 3D existe réellement dans le document
+    views3d = Gui.ActiveDocument.mdiViewsOfType("Gui::View3DInventor")
+    if not views3d:
+        return False
+
+    # Tenter d'ouvrir le sketch
+    try:
+        Gui.ActiveDocument.setEdit(sketch)
+        return True
+    except Exception:
+        return False
+
+
+def ajouter_noeud_si_absent(
+    graph,
+    ref,
+    kind=None,
+    obj_name=None,
+    prop_name=None,
+    sheet_name=None,
+    cell_name=None,
+):
+    if ref not in graph:
+        graph[ref] = {
+            "ref": ref,
+            "kind": kind,
+            "object": obj_name,
+            "property": prop_name,
+            "sheet": sheet_name,
+            "cell": cell_name,
+            "value": None,
+            "formula": None,
+            "alias": None,
+            "label": None,
+            "constraint_type": None,
+            "errors": set(),
+            "parents": set(),
+            "children": set(),
+        }
+    else:
+        # 🔥 Mise à jour du kind si on découvre plus tard que c’est une cellule
+        if kind is not None and graph[ref]["kind"] != kind:
+            graph[ref]["kind"] = kind
+
+        # 🔥 Mise à jour des infos de cellule
+        if sheet_name is not None:
+            graph[ref]["sheet"] = sheet_name
+        if cell_name is not None:
+            graph[ref]["cell"] = cell_name
+
+        # 🔥 Mise à jour des infos d'objet FreeCAD
+        if obj_name is not None:
+            graph[ref]["object"] = obj_name
+        if prop_name is not None:
+            graph[ref]["property"] = prop_name
+
+
+def construire_label_to_name():
+    d = {}
+
+    doc = App.ActiveDocument
+    if not doc:
+        return d
+
+    # Feuilles
+    for obj in doc.Objects:
+        if obj.TypeId == "App::Spreadsheet":
+            d[obj.Label] = obj.Name
+
+    # Objets FreeCAD
+    for obj in doc.Objects:
+        d[obj.Label] = obj.Name
+
+    return d
+
+
+def traiter_feuille(sheet, graph, label_to_name, alias_map):
+    xml = sheet.cells.Content
+    if not xml:
+        return
+
+    root = ET.fromstring(xml)
+
+    for cell in root.findall("Cell"):
+        addr = cell.get("address")      # ex: "D4"
+        content = cell.get("content")   # ex: "=Longueur + 2"
+        alias = cell.get("alias")       # ex: "Largeur"
+
+        if not content:
+            continue
+
+        # Nom canonique : datas.D4
+        cell_ref = f"{sheet.Name}.{addr}"
+
+        ajouter_noeud_si_absent(
+            graph,
+            ref=cell_ref,
+            kind="cell",
+            sheet_name=sheet.Name,
+            cell_name=addr,
+        )
+
+        # --- MÉTADONNÉES ---
+        graph[cell_ref]["formula"] = content
+
+        if graph[cell_ref]["alias"] is None:
+            graph[cell_ref]["alias"] = alias
+
+        if graph[cell_ref]["label"] is None or graph[cell_ref]["label"] == graph[cell_ref]["cell"]:
+            graph[cell_ref]["label"] = alias if alias else addr
+
+        graph[cell_ref]["value"] = sheet.get(addr)
+
+        if content.startswith("#"):
+            graph[cell_ref]["errors"].add(content)
+
+        # --- DÉPENDANCES ---
+        if content.startswith("="):
+            raw_refs = extract_raw_refs_for_graph(content, sheet.Name, alias_map)
+
+            for raw in raw_refs:
+                norm = normalize_ref(raw, sheet.Name, label_to_name, alias_map)
+                if not norm:
+                    continue
+
+                ajouter_noeud_si_absent(graph, norm)
+
+                graph[cell_ref]["parents"].add(norm)
+                graph[norm]["children"].add(cell_ref)
+
+
+def traiter_objet(obj, graph, label_to_name, alias_map):
+
+    if not hasattr(obj, "ExpressionEngine"):
+        return
+
+    for prop, expr in obj.ExpressionEngine:
+        # FreeCAD renvoie parfois ".Placement.Base.x" → on retire le. du départ
+        if prop.startswith("."):
+            prop = prop[1:]
+
+        ref_obj = obj.Name + "." + prop
+
+        ajouter_noeud_si_absent(
+            graph,
+            ref=ref_obj,
+            kind="property",
+            obj_name=obj.Name,
+            prop_name=prop,
+        )
+
+        graph[ref_obj]["formula"] = expr
+        graph[ref_obj]["label"] = obj.Label
+
+        value = None
+        ctype = None
+
+        if prop.startswith("Constraints["):
+            try:
+                idx = int(prop[len("Constraints["):-1])
+                constraint = obj.Constraints[idx]
+                value = constraint.Value
+                ctype = constraint.Type
+            except:
+                value = None
+                ctype = None
+
+        else:
+            try:
+                if "." in prop:
+                    # Gestion des propriétés imbriquées : Placement.Base.x
+                    parts = prop.split(".")
+                    attr = obj
+                    for p in parts:
+                        attr = getattr(attr, p)
+                    value = attr
+                else:
+                    value = getattr(obj, prop)
+            except:
+                value = None
+
+        graph[ref_obj]["value"] = value
+        graph[ref_obj]["constraint_type"] = ctype
+
+        # --- DÉPENDANCES ---
+        parents_bruts = extract_raw_refs_for_graph(expr, None, alias_map)
+
+        for p in parents_bruts:
+
+            #  Trouver la feuille correcte
+            sheet_guess = guess_sheet_from_ref(p, alias_map, label_to_name)
+
+            #  Normaliser correctement
+            p_norm = normalize_ref(p, sheet_guess, label_to_name, alias_map)
+            if not p_norm:
+                continue
+
+            ajouter_noeud_si_absent(graph, p_norm)
+
+            graph[ref_obj]["parents"].add(p_norm)
+            graph[p_norm]["children"].add(ref_obj)
+
+
+def build_graph():
+    graph = {}
+
+    doc = App.ActiveDocument
+    if not doc:
+        return graph
+
+    # 0) Construire alias_map pour toutes les feuilles
+    alias_map = build_alias_map_for_all_sheets()
+
+    # 1) Construire label_to_name
+    label_to_name = construire_label_to_name()
+
+    # 2) Parcourir tous les objets FreeCAD
+    for obj in doc.Objects:
+        traiter_objet(obj, graph, label_to_name, alias_map)
+
+    # 3) Parcourir toutes les feuilles
+    for obj in doc.Objects:
+        if obj.TypeId == "Spreadsheet::Sheet":
+            traiter_feuille(obj, graph, label_to_name, alias_map)
+
+    return graph
+
+
+def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
+    if not ref:
+        return None
+
+    ref = ref.strip()
+    if not ref:
+        return None
+
+    # 1) Gestion des <<label>>.xxx
+    if ref.startswith("<<"):
+        end = ref.find(">>")
+        if end != -1:
+            label = ref[2:end]
+            suffix = ref[end+2:]
+            if suffix.startswith("."):
+                suffix = suffix[1:]
+
+            # label → nom interne FreeCAD
+            name = label_to_name.get(label, label)
+
+            # On continue la normalisation
+            ref = name + "." + suffix if suffix else name
+
+    # 2) Références avec point : datas.Longueur, Pad.Length, etc.
+    if "." in ref:
+        sheet, key = ref.split(".", 1)
+
+        # 🔥 Vérifier si key est un alias
+        if sheet in alias_map:
+            if key in alias_map[sheet]:
+                return alias_map[sheet][key]   # ex: datas.D3
+
+        return ref
+
+    # 3) Alias locaux (Longueur → datas.D3)
+    if current_sheet_name in alias_map:
+        sheet_aliases = alias_map[current_sheet_name]
+        if ref in sheet_aliases:
+            return sheet_aliases[ref]
+
+    # 4) Référence locale de type D12 → datas.D12
+    if current_sheet_name is not None:
+        has_letter = any(c.isalpha() for c in ref)
+        has_digit = any(c.isdigit() for c in ref)
+        if has_letter and has_digit:
+            return current_sheet_name + "." + ref
+
+    # 5) Sinon, on renvoie tel quel
+    return ref
+
+
+def guess_sheet_from_ref(ref, alias_map, label_to_name):
+    # Cas <<Label>>.xxx
+    if ref.startswith("<<"):
+        end = ref.find(">>")
+        if end != -1:
+            label = ref[2:end]  # ex: datas
+            return label_to_name.get(label, label)
+
+    # Cas datas.Longueur
+    if "." in ref:
+        return ref.split(".")[0]
+
+    # Cas Longueur → chercher dans toutes les feuilles
+    for sheet, aliases in alias_map.items():
+        if ref in aliases:
+            return sheet
+
+    return None
+
+
+def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=None):
+    """
+    Explore récursivement le graphe à partir de ref.
+    Retourne un ensemble de nœuds atteignables selon les directions autorisées.
+    """
+    if isinstance(ref, tuple):
+        ref = ref[0]
+    if visited is None:
+        visited = set()
+
+    if ref in visited:
+        return visited
+
+    visited.add(ref)
+
+    # Parents
+    if allow_parents:
+        for p in graph[ref]["parents"]:
+            explore_graph(p, graph, allow_parents, allow_children, visited)
+
+    # Children
+    if allow_children:
+        for c in graph[ref]["children"]:
+            explore_graph(c, graph, allow_parents, allow_children, visited)
+
+    return visited
+
+def ask_keep_invalid_change(title, message):
+    box = QtGui.QMessageBox(FreeCADGui.getMainWindow())
+    box.setIcon(QtGui.QMessageBox.Warning)
+    box.setWindowTitle(title)
+    box.setText(message)
+    btn_cancel = box.addButton(tr("btn_cancel"), QtGui.QMessageBox.RejectRole)
+    btn_accept = box.addButton(tr("btn_accept_anyway"), QtGui.QMessageBox.AcceptRole)
+    box.exec()
+    return box.clickedButton() == btn_accept
+
+
+
+class RefDialog2(QtGui.QDialog):
+    def __init__(self, sheet):
+        super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
+
+        self.last_level = 0
+        self.sheet = sheet
+        self.graph = build_graph()
+
+        # Flags internes
+        self._editing = False
+        self._building = False
+        self._old_value = None
+        self._old_column = None
+
+        # --- Flags Qt ---
+        self.setWindowFlags(
+            QtCore.Qt.Dialog |
+            QtCore.Qt.WindowTitleHint |
+            QtCore.Qt.WindowCloseButtonHint |
+            QtCore.Qt.WindowMinMaxButtonsHint
+        )
+        self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
+        self.setMinimumWidth(400)
+
+        layout = QtGui.QVBoxLayout()
+
+        # ============================================================
+        #  LIGNES VUES : OUT/IN + filtres
+        # ============================================================
+        top_line = QtGui.QHBoxLayout()
+
+        group_lines = QtGui.QGroupBox(tr("lines_shown"))
+        modes_box = QtGui.QVBoxLayout()
+        group_lines.setLayout(modes_box)
+
+        modes_box.setSpacing(0)
+        modes_box.setContentsMargins(5, 5, 5, 5)
+
+        self.cb_out = QtGui.QCheckBox(tr("mode_out"))
+        self.cb_out.setChecked(True)
+
+        self.cb_in = QtGui.QCheckBox(tr("mode_in"))
+        self.cb_in.setChecked(True)
+
+        modes_box.addWidget(self.cb_out)
+        modes_box.addWidget(self.cb_in)
+
+        self.filter_cells = QtGui.QCheckBox(tr("filter_cells"))
+        self.filter_constraints = QtGui.QCheckBox(tr("filter_constraints"))
+        self.filter_others = QtGui.QCheckBox(tr("filter_others"))
+
+        self.filter_cells.setChecked(True)
+        self.filter_constraints.setChecked(True)
+        self.filter_others.setChecked(True)
+        self.filter_constraints.setToolTip(tr("hint_constraint"))
+
+        modes_box.addWidget(self.filter_cells)
+        modes_box.addWidget(self.filter_constraints)
+        modes_box.addWidget(self.filter_others)
+
+        self.filter_cells.toggled.connect(self.on_change_coche)
+        self.filter_constraints.toggled.connect(self.on_change_coche)
+        self.filter_others.toggled.connect(self.on_change_coche)
+
+        top_line.addWidget(group_lines)
+
+        # ============================================================
+        #  Colonne du milieu : options d'affichage
+        # ============================================================
+        self.show_formula = QtGui.QCheckBox(tr("show_formula"))
+        self.show_value = QtGui.QCheckBox(tr("show_value"))
+        self.show_labels_alias = QtGui.QCheckBox(tr("show_labels_alias"))
+        self.show_constraint_types = QtGui.QCheckBox(tr("show_constraint_types"))
+        self.show_constraint_types.setToolTip(tr("hint_constraint"))
+
+        group_middle = QtGui.QGroupBox(tr("middle_group"))
+        middle_box = QtGui.QVBoxLayout()
+        middle_box.setSpacing(0)
+        middle_box.setContentsMargins(5, 5, 5, 5)
+        group_middle.setLayout(middle_box)
+
+        middle_box.addWidget(self.show_labels_alias)
+        middle_box.addWidget(self.show_formula)
+        middle_box.addWidget(self.show_value)
+        middle_box.addWidget(self.show_constraint_types)
+
+        help_label = QtGui.QLabel(tr("hint_open_sketch"))
+        help_label.setWordWrap(True)
+        help_label.setStyleSheet("color: gray; font-style: italic;")
+        middle_box.addWidget(help_label)
+
+        self.show_labels_alias.stateChanged.connect(self.recompute)
+        self.show_constraint_types.stateChanged.connect(self.recompute)
+
+        # ============================================================
+        #  Colonne de droite (boutons)
+        # ============================================================
+        right_box = QtGui.QVBoxLayout()
+        right_box.setAlignment(QtCore.Qt.AlignTop)
+
+        self.btn_refresh = QtGui.QPushButton()
+        self.btn_refresh.setMaximumWidth(32)
+        icon = QtGui.QApplication.style().standardIcon(QtGui.QStyle.SP_BrowserReload)
+        self.btn_refresh.setIcon(icon)
+        self.btn_refresh.setToolTip(tr("btn_refresh_tt"))
+        right_box.addWidget(self.btn_refresh)
+
+        self.btn_expand_all = QtGui.QPushButton(tr("btn_expand"))
+        self.btn_expand_all.setMaximumWidth(120)
+        right_box.addWidget(self.btn_expand_all)
+
+        self.level_spin = QtGui.QSpinBox()
+        self.level_spin.setMinimum(1)
+        self.level_spin.setMaximum(10)
+        self.level_spin.setValue(INITIAL_LEVEL)
+        self.level_spin.setPrefix(tr("level_prefix"))
+        self.level_spin.setMaximumWidth(120)
+        right_box.addWidget(self.level_spin)
+
+        self.btn_collapse_all = QtGui.QPushButton(tr("btn_collapse"))
+        self.btn_collapse_all.setMaximumWidth(120)
+        right_box.addWidget(self.btn_collapse_all)
+
+        top_line.addWidget(group_middle)
+        top_line.addLayout(right_box)
+
+        layout.addLayout(top_line)
+
+        # ============================================================
+        #  Arbre
+        # ============================================================
+        self.tree = QtGui.QTreeWidget()
+
+        # ============================================================
+        #  DÉLÉGUÉ LECTURE SEULE POUR LES COLONNES NON ÉDITABLES
+        # ============================================================
+        class ReadOnlyDelegate(QtGui.QStyledItemDelegate):
+            def createEditor(self, parent, option, index):
+                return None  # empêche l'édition
+
+        readonly = ReadOnlyDelegate(self.tree)
+
+        # Colonnes non éditables : 0, 2, 4
+        for col in (0, 2, 4):
+            self.tree.setItemDelegateForColumn(col, readonly)
+
+        self.tree.itemDoubleClicked.connect(self.on_item_double_click_constraint)
+
+        self.tree.setHeaderHidden(False)
+        self.tree.setColumnCount(5)
+        self.tree.setHeaderLabels([
+            tr("col_name"),
+            tr("col_label"),
+            tr("col_value"),
+            tr("col_content"),
+            tr("col_type")
+        ])
+
+        self.tree.header().setStretchLastSection(True)
+
+        self.tree.header().setSectionsMovable(True)
+        self.tree.header().setSectionsClickable(True)
+        self.tree.header().setSectionResizeMode(QtGui.QHeaderView.Interactive)
+        self.tree.header().setMinimumSectionSize(30)
+        self.tree.header().setStretchLastSection(True)
+
+        self.tree.setStyleSheet("QTreeWidget::item:hover { background-color: #e0e0e0; }")
+        self.tree.setSelectionBehavior(QtGui.QAbstractItemView.SelectRows)
+
+        layout.addWidget(self.tree)
+        self.setLayout(layout)
+
+        # ============================================================
+        #  Connexions
+        # ============================================================
+        self.btn_refresh.clicked.connect(self.recompute)
+        self.btn_expand_all.clicked.connect(self.expand_all)
+        self.btn_collapse_all.clicked.connect(self.collapse_all)
+        self.level_spin.valueChanged.connect(self.set_expand_level)
+
+        self.cb_out.toggled.connect(self.on_change_coche)
+        self.cb_in.toggled.connect(self.on_change_coche)
+
+        self.show_formula.stateChanged.connect(self.recompute)
+        self.show_value.stateChanged.connect(self.recompute)
+
+        # --- Début et fin d’édition ---
+        # self.tree.itemDoubleClicked.connect(self.on_start_edit)
+        self.tree.itemClicked.connect(self.on_item_simple_clicked)
+
+        self.tree.itemChanged.connect(self.on_item_changed)
+        self.tree.setEditTriggers(QtGui.QAbstractItemView.EditKeyPressed |
+                                  QtGui.QAbstractItemView.SelectedClicked)
+
+        # ============================================================
+        #  Charger les réglages
+        # ============================================================
+        self.load_settings()
+
+        # Premier affichage
+        self.recompute()
+
+    # --------------------------------------------------------
+    # Colonnes : construction des 5 champs
+    # --------------------------------------------------------
+    def enrich_columns(self, ref, node):
+        """
+        Construit les 5 colonnes :
+        0: Nom interne (datas.D3, Pad.Length, ...)
+        1: Label / alias
+        2: résultat
+        3: Contenu (formule)
+        4: Type de contrainte
+        """
+        kind = node.get("kind")
+
+        nom = ref
+        alias = ""
+        valeur = ""
+        contenu = ""
+        ctype = ""
+
+        # Cellule de spreadsheet
+        if kind == "cell":
+            sheet = node.get("sheet")
+            cell = node.get("cell")
+            nom = f"{sheet}.{cell}" if sheet and cell else ref
+            alias = node.get("label") or node.get("alias") or (cell or "")
+            v = node.get("value")
+            if v is not None:
+                valeur = str(v)
+            f = node.get("formula")
+            if f:
+                contenu = str(f)
+            ct = node.get("constraint_type")
+            if ct:
+                ctype = str(ct)
+
+        # Propriété d'objet FreeCAD
+        elif kind == "property":
+            obj = node.get("object")
+            prop = node.get("property")
+            nom = f"{obj}.{prop}" if obj and prop else ref
+            alias = node.get("label") or ""
+            v = node.get("value")
+            if v is not None:
+                valeur = str(v)
+            f = node.get("formula")
+            if f:
+                contenu = str(f)
+            ct = node.get("constraint_type")
+            if ct:
+                ctype = str(ct)
+
+        # Autre
+        else:
+            nom = ref
+            alias = node.get("label") or ""
+            v = node.get("value")
+            if v is not None:
+                valeur = str(v)
+            f = node.get("formula")
+            if f:
+                contenu = str(f)
+            ct = node.get("constraint_type")
+            if ct:
+                ctype = str(ct)
+
+        return [nom, alias, valeur, contenu, ctype]
+
+    # --------------------------------------------------------
+    # Sauvegarde / chargement INI
+    # --------------------------------------------------------
+    def load_settings(self):
+        if not os.path.exists(INI_PATH):
+            return
+
+        config = configparser.ConfigParser()
+        config.read(INI_PATH, encoding="utf-8")
+        ui = config["UI"]
+
+        # --- Cases à cocher OUT / IN ---
+        self.cb_out.setChecked(ui.getboolean("show_out", True))
+        self.cb_in.setChecked(ui.getboolean("show_in", True))
+
+        # --- Filtres Cellules / Contraintes / Autres ---
+        self.filter_cells.setChecked(ui.getboolean("filter_cells", True))
+        self.filter_constraints.setChecked(ui.getboolean("filter_constraints", True))
+        self.filter_others.setChecked(ui.getboolean("filter_others", True))
+
+        # --- Cases à cocher existantes ---
+        self.show_formula.setChecked(ui.getboolean("show_formula", False))
+        self.show_value.setChecked(ui.getboolean("show_value", False))
+        self.show_labels_alias.setChecked(ui.getboolean("show_labels_alias", False))
+        self.show_constraint_types.setChecked(ui.getboolean("show_constraint_types", False))
+
+        # --- Taille ---
+        w = ui.getint("width", 600)
+        h = ui.getint("height", 400)
+        self.resize(w, h)
+
+        # --- Restaurer l'état des colonnes ---
+        header = self.tree.header()
+
+        # 1) Restaurer l'état du header (ordre, visibilité, tri)
+        if "header_state" in ui:
+            try:
+                state = QtCore.QByteArray.fromBase64(ui["header_state"].encode("utf-8"))
+                header.restoreState(state)
+            except:
+                pass
+
+        # 2) Forcer le mode interactif (sinon restoreState remet ResizeToContents)
+        header.setSectionResizeMode(QtGui.QHeaderView.Interactive)
+        header.setMinimumSectionSize(30)
+
+        # 3) Restaurer les largeurs de colonnes
+        if "column_widths" in ui:
+            widths = ui["column_widths"].split(",")
+            for i, cw in enumerate(widths):
+                try:
+                    self.tree.setColumnWidth(i, int(cw))
+                except:
+                    pass
+
+        if "column_widths" in ui:
+            widths = ui["column_widths"].split(",")
+            for i, cw in enumerate(widths):
+                try:
+                    self.tree.setColumnWidth(i, int(cw))
+                except:
+                    pass
+
+        # --- Position ---
+        x = ui.getint("pos_x", 100)
+        y = ui.getint("pos_y", 100)
+
+        saved_screen = ui.get("screen_name", None)
+        screens = QtGui.QApplication.screens()
+        target_screen = None
+
+        if saved_screen:
+            for s in screens:
+                if s.name() == saved_screen:
+                    target_screen = s
+                    break
+
+        if not target_screen:
+            target_screen = QtGui.QApplication.primaryScreen()
+
+        geo = target_screen.availableGeometry()
+        rect = QtCore.QRect(x, y, w, h)
+
+        if not geo.contains(rect.center()):
+            cx = geo.center().x() - w // 2
+            cy = geo.center().y() - h // 2
+            x, y = cx, cy
+
+        self.move(x, y)
+
+    def save_settings(self):
+        config = configparser.ConfigParser()
+        config["UI"] = {}
+
+        # --- Cases à cocher OUT / IN ---
+        config["UI"]["show_out"] = str(self.cb_out.isChecked())
+        config["UI"]["show_in"] = str(self.cb_in.isChecked())
+
+        # --- Filtres Cellules / Contraintes / Autres ---
+        config["UI"]["filter_cells"] = str(self.filter_cells.isChecked())
+        config["UI"]["filter_constraints"] = str(self.filter_constraints.isChecked())
+        config["UI"]["filter_others"] = str(self.filter_others.isChecked())
+
+        # --- Cases à cocher existantes ---
+        config["UI"]["show_formula"] = str(self.show_formula.isChecked())
+        config["UI"]["show_value"] = str(self.show_value.isChecked())
+        config["UI"]["show_labels_alias"] = str(self.show_labels_alias.isChecked())
+        config["UI"]["show_constraint_types"] = str(self.show_constraint_types.isChecked())
+
+        # --- Taille ---
+        size = self.size()
+        config["UI"]["width"] = str(size.width())
+        config["UI"]["height"] = str(size.height())
+
+        # --- Position ---
+        pos = self.pos()
+        config["UI"]["pos_x"] = str(pos.x())
+        config["UI"]["pos_y"] = str(pos.y())
+
+
+        # --- Ordre et état des colonnes ---
+        header_state = self.tree.header().saveState()
+        config["UI"]["header_state"] = header_state.toBase64().data().decode("utf-8")
+
+        # Sauvegarde des largeurs de colonnes
+        widths = [self.tree.columnWidth(i) for i in range(self.tree.columnCount())]
+        config["UI"]["column_widths"] = ",".join(str(w) for w in widths)
+
+        # --- Écran ---
+        try:
+            screen = self.screen()
+            if screen:
+                config["UI"]["screen_name"] = screen.name()
+        except:
+            pass
+
+        # --- Écriture du fichier ---
+        with open(INI_PATH, "w", encoding="utf-8") as f:
+            config.write(f)
+
+    def closeEvent(self, event):
+        self.save_settings()
+        super().closeEvent(event)
+
+    # --------------------------------------------------------
+    # Mise à jour visibilité des colonnes
+    # --------------------------------------------------------
+    def update_column_visibility(self):
+        # 0: Nom (toujours visible)
+        self.tree.setColumnHidden(1, not self.show_labels_alias.isChecked())      # Label/Alias
+        self.tree.setColumnHidden(2, not self.show_value.isChecked())            # Valeur
+        self.tree.setColumnHidden(3, not self.show_formula.isChecked())          # Contenu
+        self.tree.setColumnHidden(4, not self.show_constraint_types.isChecked()) # Type
+
+    # --------------------------------------------------------
+    # RECOMPUTE
+    def recompute(self):
+
+        self._building = True
+        print('recompute lancé')
+
+        try:
+            # ------------------------------------------------------------
+            # 0) Forcer Qt à flusher les signaux
+            # ------------------------------------------------------------
+            self.tree.clearFocus()
+            self.tree.setFocus()
+
+            # ------------------------------------------------------------
+            # 1) Détecter la feuille active
+            # ------------------------------------------------------------
+            current_view = Gui.ActiveDocument.ActiveView
+
+            # Si on est dans la vue 3D → ouvrir la feuille
+            if type(current_view).__name__ == "View3DInventorPy":
+                self.sheet.ViewObject.doubleClicked()
+                print('focus changé')
+
+                # IMPORTANT : relire la vue active
+                current_view = Gui.ActiveDocument.ActiveView
+                print('current_view', current_view)
+
+            # Essayer de récupérer la feuille via la vue
+            new_sheet = None
+            if hasattr(current_view, "getSheet"):
+                try:
+                    new_sheet = current_view.getSheet()
+                except Exception:
+                    print("getSheet() a échoué")
+
+            # Fallback : récupérer via la sélection
+            if not new_sheet:
+                sel = Gui.Selection.getSelection()
+                if sel and sel[0].TypeId == "Spreadsheet::Sheet":
+                    new_sheet = sel[0]
+                else:
+                    print("new_sheet est à None")
+
+            # Si la feuille a changé → reconstruire le graphe
+            if new_sheet and new_sheet != self.sheet:
+                self.sheet = new_sheet
+                self.graph = build_graph()
+
+            # ------------------------------------------------------------
+            # 2) Mise à jour du titre
+            # ------------------------------------------------------------
+            self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
+
+            # ------------------------------------------------------------
+            # 3) Nettoyage de l'arbre
+            # ------------------------------------------------------------
+            self.tree.clear()
+
+            # ------------------------------------------------------------
+            # 4) Lire la sélection sur la feuille
+            # ------------------------------------------------------------
+            selected = self.sheet.ViewObject.getView().selectedCells()
+            if not selected:
+                self.update_column_visibility()
+                return
+
+            # Convertir la sélection en adresses
+            addrs = []
+            for item in selected:
+                if isinstance(item, str):
+                    addrs.append(item)
+                elif len(item) == 2:
+                    addrs.append(cell_to_addr(item[0], item[1]))
+
+            roots = [
+                f"{self.sheet.Name}.{a}"
+                for a in addrs
+                if f"{self.sheet.Name}.{a}" in self.graph
+            ]
+
+            if not roots:
+                self.update_column_visibility()
+                return
+
+            # ------------------------------------------------------------
+            # 5) Construire l’arbre
+            # ------------------------------------------------------------
+            for root in roots:
+                self.build_tree(root)
+
+            # ------------------------------------------------------------
+            # 6) Ajuster la profondeur max
+            # ------------------------------------------------------------
+            depth = self.get_tree_depth()
+            self.level_spin.setMaximum(depth)
+
+            if self.level_spin.value() > depth:
+                self.level_spin.setValue(depth)
+
+            # ------------------------------------------------------------
+            # 7) Déplier automatiquement
+            # ------------------------------------------------------------
+            self.set_expand_level(self.level_spin.value())
+
+            # ------------------------------------------------------------
+            # 8) Mise à jour de la visibilité des colonnes
+            # ------------------------------------------------------------
+            self.update_column_visibility()
+
+        finally:
+            self._building = False
+
+    # --- Fonctions de catégorisation ---
+    def should_display(self, ref, root_ref, reachable, branch_direction):
+        if reachable is None:
+            reachable = self.graph.keys()
+
+        node = self.graph[ref]
+        cat = self.get_node_category(node)
+
+        # 1) Le nœud correspond directement à un filtre
+        if cat == "cell" and self.filter_cells.isChecked():
+            return True
+
+        if cat == "constraint" and self.filter_constraints.isChecked():
+            return True
+
+        if cat == "other" and self.filter_others.isChecked():
+            return True
+
+        # 2) Descendants dans LA direction du sous-arbre
+        if branch_direction == "parents":  # Branche Uses
+            if self.filter_cells.isChecked():
+                if self.has_descendant_of_category(ref, "cell", "parents", reachable):
+                    return True
+
+            if self.filter_constraints.isChecked():
+                if self.has_descendant_of_category(ref, "constraint", "parents", reachable):
+                    return True
+
+            if self.filter_others.isChecked():
+                if self.has_descendant_of_category(ref, "other", "parents", reachable):
+                    return True
+
+        if branch_direction == "children":  # Branche Used by
+            if self.filter_cells.isChecked():
+                if self.has_descendant_of_category(ref, "cell", "children", reachable):
+                    return True
+
+            if self.filter_constraints.isChecked():
+                if self.has_descendant_of_category(ref, "constraint", "children", reachable):
+                    return True
+
+            if self.filter_others.isChecked():
+                if self.has_descendant_of_category(ref, "other", "children", reachable):
+                    return True
+
+        return False
+
+    def get_node_category(self, node):
+        """
+        Retourne la catégorie logique d’un nœud du graphe :
+        - "constraint"  → si c’est une contrainte d’esquisse
+        - "cell"        → si c’est une cellule de spreadsheet
+        - "other"       → tout le reste (propriétés d’objets FreeCAD, etc.)
+        """
+
+        # 1) Contrainte d’esquisse
+        if node.get("constraint_type"):
+            return "constraint"
+
+        # 2) Cellule de spreadsheet
+        if node.get("kind") == "cell":
+            return "cell"
+
+        # 3) Tout le reste
+        return "other"
+
+    def has_descendant_of_category(self, ref, category, direction, reachable=None, visited=None):
+        """
+        Version instrumentée : affiche tout ce qui est exploré,
+        en respectant STRICTEMENT la direction donnée.
+        """
+
+        if reachable is None:
+            reachable = self.graph.keys()
+
+        if visited is None:
+            visited = set()
+
+        if ref in visited:
+            return False
+        visited.add(ref)
+
+        node = self.graph[ref]
+        cat = self.get_node_category(node)
+
+        # --- Direction parents (Uses) ---
+        if direction == "parents":
+            for p in self.graph[ref]["parents"]:
+                if p not in reachable:
+                    continue
+
+                node_p = self.graph[p]
+                cat_p = self.get_node_category(node_p)
+
+                if cat_p == category:
+                    return True
+
+                if self.has_descendant_of_category(p, category, "parents", reachable, visited):
+                    return True
+
+        # --- Direction children (Used by) ---
+        if direction == "children":
+            for c in self.graph[ref]["children"]:
+                if c not in reachable:
+                    continue
+
+                node_c = self.graph[c]
+                cat_c = self.get_node_category(node_c)
+
+                if cat_c == category:
+                    return True
+
+                if self.has_descendant_of_category(c, category, "children", reachable, visited):
+                    return True
+
+        return False
+
+    # --------------------------------------------------------
+    # BUILD TREE
+    # --------------------------------------------------------
+    def add_in_recursive(self, parent_item, ref, reachable, root_ref):
+
+        for p in sorted(self.graph[ref]["parents"]):
+            if p not in reachable:
+                continue
+
+            # --- Filtrage ---
+            if not self.should_display(p, root_ref, reachable, "parents"):
+                continue
+
+            node = self.graph[p]
+            cols = self.enrich_columns(p, node)
+            item = QtGui.QTreeWidgetItem(parent_item, cols)
+            item.setData(0, QtCore.Qt.UserRole, p)
+
+            # --- Rendre éditables les colonnes 1 et 3 ---
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+
+            # --- Tooltip enrichi ---
+            tooltip = f"Name : {node.get('ref', '')}"
+
+            if node.get("kind") == "cell":
+                tooltip += f"\nAlias : {node.get('label', '')}"
+            else:
+                tooltip += f"\nLabel : {node.get('label', '')}"
+
+            tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
+            tooltip += f"\n{tr('value')}: {node.get('value', '')}"
+
+            ctype = node.get("constraint_type")
+            if ctype:
+                tooltip += f"\nType: {ctype}"
+                #tooltip += f"\n{tr('hint_constraint')}"
+
+            for col in range(self.tree.columnCount()):
+                item.setToolTip(col, tooltip)
+
+            # --- Données internes pour clic droit ---
+            if node["kind"] == "property" and node["property"].startswith("Constraints["):
+                try:
+                    idx = int(node["property"][len("Constraints["):-1])
+                    item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
+                    item.setData(0, QtCore.Qt.UserRole + 2, idx)
+                except:
+                    pass
+
+            # --- Récursion ---
+            self.add_in_recursive(item, p, reachable, root_ref)
+
+    def add_out_recursive(self, parent_item, ref, reachable, root_ref):
+
+        for c in sorted(self.graph[ref]["children"]):
+            if c not in reachable:
+                continue
+
+            # --- Filtrage ---
+            if not self.should_display(c, root_ref, reachable, "children"):
+                continue
+
+            node = self.graph[c]
+            cols = self.enrich_columns(c, node)
+            item = QtGui.QTreeWidgetItem(parent_item, cols)
+            item.setData(0, QtCore.Qt.UserRole, c)
+
+            # --- Rendre éditables les colonnes 1 et 3 ---
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+
+            # --- Tooltip enrichi ---
+            tooltip = f"Name : {node.get('ref', '')}"
+
+            if node.get("kind") == "cell":
+                tooltip += f"\nAlias : {node.get('label', '')}"
+            else:
+                tooltip += f"\nLabel : {node.get('label', '')}"
+
+            tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
+            tooltip += f"\n{tr('value')}: {node.get('value', '')}"
+
+            ctype = node.get("constraint_type")
+            if ctype:
+                tooltip += f"\nType: {ctype}"
+            #    tooltip += f"\n{tr('hint_constraint')}"
+
+            for col in range(self.tree.columnCount()):
+                item.setToolTip(col, tooltip)
+
+            # --- Données internes pour clic droit ---
+            if node["kind"] == "property" and node["property"].startswith("Constraints["):
+                try:
+                    idx = int(node["property"][len("Constraints["):-1])
+                    item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
+                    item.setData(0, QtCore.Qt.UserRole + 2, idx)
+                except:
+                    pass
+
+            # --- Récursion ---
+            self.add_out_recursive(item, c, reachable, root_ref)
+
+
+    def build_tree(self, root):
+
+        # ------------------------------------------------------------
+        # Protection : on indique qu'on construit l'arbre
+        # ------------------------------------------------------------
+        self._building = True
+
+        try:
+            # ------------------------------------------------------------
+            # 1) Exploration du graphe (AVANT filtrage)
+            # ------------------------------------------------------------
+            allow_parents = self.cb_out.isChecked()
+            allow_children = self.cb_in.isChecked()
+
+            reachable = explore_graph(root, self.graph, allow_parents, allow_children)
+
+            # ------------------------------------------------------------
+            # 2) Filtrage de la racine (APRÈS exploration)
+            # ------------------------------------------------------------
+            root_visible = False
+
+            node = self.graph[root]
+            cat = self.get_node_category(node)
+
+            # 2a) Si la racine correspond directement à un filtre → visible
+            if cat == "cell" and self.filter_cells.isChecked():
+                root_visible = True
+            elif cat == "constraint" and self.filter_constraints.isChecked():
+                root_visible = True
+            elif cat == "other" and self.filter_others.isChecked():
+                root_visible = True
+
+            # 2b) Sinon : tester les branches Uses et Used by
+            if not root_visible and self.cb_out.isChecked():
+                for p in self.graph[root]["parents"]:
+                    if p in reachable and self.should_display(p, root, reachable, "parents"):
+                        root_visible = True
+                        break
+
+            if not root_visible and self.cb_in.isChecked():
+                for c in self.graph[root]["children"]:
+                    if c in reachable and self.should_display(c, root, reachable, "children"):
+                        root_visible = True
+                        break
+
+            if not root_visible:
+                return
+
+            # ------------------------------------------------------------
+            # 3) Création de l’item racine
+            # ------------------------------------------------------------
+            cols_root = self.enrich_columns(root, self.graph[root])
+            root_item = QtGui.QTreeWidgetItem(self.tree, cols_root)
+            root_item.setData(0, QtCore.Qt.UserRole, root)
+
+            # --- Rendre éditables les colonnes 1 et 3 ---
+            # Rendre éditables uniquement les colonnes 1 (Alias) et 3 (Formule)
+            # --- Rendre l’item racine éditable (filtrage par colonne se fait ailleurs) ---
+            root_item.setFlags(root_item.flags() | QtCore.Qt.ItemIsEditable)
+
+            #root_item.setFlags(flags)
+
+            # Tooltip enrichi
+            tooltip = f"Name : {node.get('ref', '')}"
+
+            if node.get("kind") == "cell":
+                tooltip += f"\nAlias : {node.get('label', '')}"
+            else:
+                tooltip += f"\nLabel : {node.get('label', '')}"
+
+            tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
+
+            value = node.get("value")
+            if value is not None:
+                tooltip += f"\n{tr('value')}: {value}"
+
+            ctype = node.get("constraint_type")
+            if ctype:
+                tooltip += f"\nType: {ctype}"
+                #tooltip += f"\n{tr('hint_constraint')}"
+
+            for col in range(self.tree.columnCount()):
+                root_item.setToolTip(col, tooltip)
+
+            root_item.setExpanded(True)
+
+            # ------------------------------------------------------------
+            # 4) Section IN (Uses)
+            # ------------------------------------------------------------
+            if self.cb_out.isChecked():
+                in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses"), "", "", "", ""])
+                self.add_in_recursive(in_item, root, reachable, root)
+
+                if in_item.childCount() == 0:
+                    root_item.removeChild(in_item)
+
+            # ------------------------------------------------------------
+            # 5) Section OUT (Used by)
+            # ------------------------------------------------------------
+            if self.cb_in.isChecked():
+                out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by"), "", "", "", ""])
+                self.add_out_recursive(out_item, root, reachable, root)
+
+                if out_item.childCount() == 0:
+                    root_item.removeChild(out_item)
+
+        finally:
+            # ------------------------------------------------------------
+            # Fin de construction : on réactive les signaux
+            # ------------------------------------------------------------
+            self._building = False
+
+    def get_tree_depth(self):
+        """Retourne la profondeur maximale de l'arbre affiché."""
+
+        def depth_of(item):
+            if item.childCount() == 0:
+                return 1
+            return 1 + max(depth_of(item.child(i)) for i in range(item.childCount()))
+
+        max_depth = 1
+        for i in range(self.tree.topLevelItemCount()):
+            d = depth_of(self.tree.topLevelItem(i))
+            if d > max_depth:
+                max_depth = d
+
+        # On décale de 1, mais on ne descend jamais sous 1
+        return max(1, max_depth - 1)
+
+    def set_expand_level(self, level):
+        # Applique un niveau d'expansion à l'arbre.
+
+        self.last_level = level
+
+        def rec(item, depth):
+            # Déplier si on est dans la profondeur autorisée
+            if level == 1 or level == 0:
+                item.setExpanded(depth < level - 1)
+            else:
+                item.setExpanded(depth < level)
+
+            # Parcours des enfants
+            for i in range(item.childCount()):
+                rec(item.child(i), depth + 1)
+
+        # Appliquer à chaque racine
+        for i in range(self.tree.topLevelItemCount()):
+            rec(self.tree.topLevelItem(i), 0)
+
+    # --------------------------------------------------------
+    # EXPAND / COLLAPSE
+    # --------------------------------------------------------
+    def expand_all(self):
+        def rec(item, depth):
+            item.setExpanded(True)
+            max_depth = depth
+            for i in range(item.childCount()):
+                d = rec(item.child(i), depth + 1)
+                if d > max_depth:
+                    max_depth = d
+            return max_depth
+
+        # Calculer la profondeur max sur toutes les racines
+        max_depth = 0
+        for i in range(self.tree.topLevelItemCount()):
+            d = rec(self.tree.topLevelItem(i), 1)  # profondeur racine = 1
+            if d > max_depth:
+                max_depth = d
+
+        # Mettre à jour le spinbox sans déclencher le callback
+        self.level_spin.blockSignals(True)
+        self.level_spin.setValue(max_depth - 1)
+        self.level_spin.blockSignals(False)
+
+    def collapse_all(self):
+        # Replier selon le niveau par défaut
+        self.set_expand_level(DEFAULT_COLLAPSE_LEVEL)
+
+        # Synchroniser le SpinBox
+        self.level_spin.setValue(DEFAULT_COLLAPSE_LEVEL)
+
+    # --------------------------------------------------------
+    # Clic droit dans l'arbre : sélectionner contrainte + focus Spreadsheet
+    # --------------------------------------------------------
+    def on_item_double_click_constraint(self, item, column):
+
+        sketch_name = item.data(0, QtCore.Qt.UserRole + 1)
+        constraint_index = item.data(0, QtCore.Qt.UserRole + 2)
+
+        if sketch_name is None or constraint_index is None:
+            return
+
+        doc = App.ActiveDocument
+        sketch = doc.getObject(sketch_name)
+
+        # Vérifier si un objet est déjà en édition
+        vp = Gui.ActiveDocument.getInEdit()
+
+        # Si aucun sketch n'est en édition → tenter ouverture auto SI vue 3D existe
+        if vp is None or vp.Object.Name != sketch_name:
+
+            # Tentative d'ouverture automatique du sketch
+            opened = openSketchInEditMode(sketch)
+
+            if opened:
+                # Le sketch a été ouvert automatiquement → on continue
+                vp = Gui.ActiveDocument.getInEdit()
+            else:
+                # Aucune vue 3D → on NE demande rien de plus
+                QtGui.QMessageBox.warning(
+                    None,
+                    tr("sketch_not_open_title"),
+                    tr("sketch_not_open_msg") + sketch_name
+                )
+                return
+
+        # Trouver le conteneur (Body ou rien)
+        body = sketch.getParentGeoFeatureGroup() if hasattr(sketch, "getParentGeoFeatureGroup") else None
+        container_name = body.Name if body else sketch_name
+
+        # Sélectionner la contrainte (+1)
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(
+            doc.Name,
+            container_name,
+            f"{sketch_name}.Constraint{constraint_index + 1}"
+        )
+
+        # Redonner le focus au Spreadsheet
+        self.restoreSpreadsheetFocus()
+
+
+    # ---------------------------------------------------------
+    # Vérifie si un sketch est en mode édition
+    # ---------------------------------------------------------
+    def isSketchInEdit(self, sketch):
+        vp = Gui.ActiveDocument.getInEdit()
+        return vp is not None and hasattr(vp, "Object") and vp.Object == sketch
+
+    # ---------------------------------------------------------
+    # Redonne le focus au Spreadsheet actif
+    # ---------------------------------------------------------
+    def restoreSpreadsheetFocus(self):
+        mw = Gui.getMainWindow()
+        for w in mw.findChildren(QtGui.QWidget):
+            if w.metaObject().className() == "SpreadsheetGui::SheetView":
+                w.setFocus()
+                return
+
+    def on_change_coche(self, checked):
+        self.recompute()
+        if checked:  # seulement si COCHÉ
+            self.expand_all()
+
+    def on_item_changed(self, item, column):
+
+        # --- 1) Filtrage technique ---
+        if self._building:
+            return
+        if self._editing:
+            return
+        if column not in (1, 3):
+            return
+
+        # --- 2) Vérifier si la valeur a réellement changé ---
+        new_value = item.text(column)
+        old_value = self._old_value
+
+        if old_value is None:
+            return
+
+        if new_value == old_value:
+            return
+
+        # --- 3) Traitement ---
+        self._editing = True
+        try:
+            node_id = item.data(0, QtCore.Qt.UserRole)
+            if node_id is None:
+                return
+
+            node = self.graph.get(node_id)
+            if not isinstance(node, dict):
+                return
+
+            kind = node.get("kind")
+
+            # ============================================================
+            # === FORMULE SUR CONTRAINTE / PROPRIÉTÉ ======================
+            # ============================================================
+            if kind == "property" and column == 3:
+                warning_shown = False
+                keep_invalid = False  # <-- indispensable
+
+                try:
+                    raw_name = item.text(0)
+                    obj_name = raw_name.split(".")[0]
+                    obj = App.ActiveDocument.getObject(obj_name)
+
+                    prop = node.get("property")
+                    expr = new_value.lstrip("=")
+
+                    # --- Appliquer la formule ---
+                    # --- 1) Test expression ---
+                    try:
+                        obj.setExpression(prop, expr)
+                    except Exception as e:
+                        # Ici : erreur d’expression (syntaxe)
+                        print("Erreur d’expression :", e)
+
+                        QtGui.QMessageBox.warning(
+                            None,
+                            tr("object_invalid_title"),
+                            tr("object_invalid_expression_msg")
+                        )
+
+                        # rollback immédiat
+                        self._editing = True
+                        item.setText(column, old_value)
+                        self._editing = False
+                        return
+
+                    # --- 2) Test géométrie ---
+                    try:
+                        App.ActiveDocument.recompute()
+                    except Exception as e:
+                        # Ici : erreur géométrique
+                        print("Erreur géométrique :", e)
+
+                        keep_invalid = ask_keep_invalid_change(
+                            tr("object_invalid_title"),
+                            tr("object_invalid_msg")
+                        )
+
+                        if not keep_invalid:
+                            # rollback
+                            old_expr = old_value.lstrip("=")
+                            obj.setExpression(prop, old_expr)
+                            App.ActiveDocument.recompute()
+
+                            self._editing = True
+                            item.setText(column, old_value)
+                            self._editing = False
+                            return
+
+                        # Sinon : accepter quand même
+                        self.recompute()
+                        return
+
+                    if hasattr(obj, "State") and "Invalid" in obj.State:
+                        warning_shown = True
+                        keep_invalid = ask_keep_invalid_change(
+                            tr("object_invalid_title"),
+                            tr("object_invalid_msg")
+                        )
+
+                        if not keep_invalid:
+                            raise ValueError("Object became invalid")
+                        else:
+                            self.recompute()
+                            return
+
+                    # Si on arrive ici sans exception, on considère que c'est accepté
+                    self.recompute()
+                    keep_invalid = True
+
+
+                except Exception as e:
+                    print("Formula PROPERTY ERROR:", e)
+
+                    # Si aucun warning n'a été affiché dans le try
+                    if not warning_shown:
+                        keep_invalid = ask_keep_invalid_change(
+                            tr("object_invalid_title"),
+                            tr("object_invalid_msg")
+                        )
+                        if keep_invalid:
+                            self.recompute()
+                            return
+
+                    # --- RESTAURATION uniquement si keep_invalid == False ---
+                    if not keep_invalid:
+                        old_expr = old_value.lstrip("=")
+                        try:
+                            obj.setExpression(prop, old_expr)
+                            App.ActiveDocument.recompute()
+                        except Exception as e2:
+                            print("ERROR restoring old expression:", e2)
+
+                        # --- RESTAURATION DANS L’ARBRE ---
+                        self._editing = True
+                        item.setText(column, old_value)
+                        self._editing = False
+
+                return
+
+            # ============================================================
+            # === CELLULE SPREADSHEET ====================================
+            # ============================================================
+            if kind != "cell":
+                print("IGNORED: not a cell")
+                return
+
+            # --- Récupération correcte de la feuille et de la cellule ---
+            ref = node["ref"]
+            sheet_name, local = ref.split(".")
+            sheet = App.ActiveDocument.getObject(sheet_name)
+            if not sheet:
+                print("ERREUR: sheet not found :", sheet_name)
+                return
+
+            # --- ALIAS ---
+            if column == 1:
+                try:
+                    sheet.setAlias(local, new_value)
+                    sheet.recompute()
+                    self.recompute()
+
+                except Exception as e:
+                    print("Alias ERROR:", e)
+
+                    # Restauration
+                    self._editing = True
+                    item.setText(column, old_value)
+                    self._editing = False
+
+                return
+
+            # --- FORMULE SUR CELLULE SPREADSHEET ---
+            if column == 3:
+                try:
+                    sheet.set(local, new_value)
+                    sheet.recompute()
+
+                    # --- Vérifier l'état du Spreadsheet ---
+                    state = sheet.State
+                    if "Invalid" in state:
+
+                        keep = ask_keep_invalid_change(
+                            tr("spreadsheet_invalid_title"),
+                            tr("spreadsheet_invalid_msg")
+                        )
+
+                        if not keep:
+                            raise ValueError("Spreadsheet became invalid")
+                        else:
+                            self.recompute()
+                            return
+
+                    # --- Vérifier si FreeCAD a mis un ERR dans la cellule ---
+                    val = sheet.get(local)
+                    if isinstance(val, str) and val.startswith("ERR"):
+                        raise ValueError("Invalid formula")
+
+                    self.recompute()
+
+                except Exception as e:
+                    print("Formula CELL ERROR:", e)
+
+                    # --- RESTAURATION ---
+                    try:
+                        sheet.set(local, old_value)
+                        sheet.recompute()
+                    except Exception as e2:
+                        print("ERROR restoring old cell formula:", e2)
+
+                    # --- RESTAURATION DANS L’ARBRE ---
+                    self._editing = True
+                    item.setText(column, old_value)
+                    self._editing = False
+
+                return
+
+        finally:
+            self._editing = False
+            self._old_value = None
+            self._old_column = None
+
+    def on_item_simple_clicked(self, item, column):
+        """
+        Début d'édition utilisateur.
+        On mémorise l’ancienne valeur pour détecter un vrai changement.
+        """
+        if column not in (1, 3):
+            print(f"[EDIT BLOCKED] colonne non éditable : {column}")
+            return
+
+        self._old_value = item.text(column)
+        self._old_column = column
+
+
+# ------------------------------------------------------------
+# Programme principal
+# ------------------------------------------------------------
+try:
+    view = Gui.ActiveDocument.ActiveView
+    sheet = view.getSheet()
+except:
+    sheet = None
+
+if sheet is None:
+    QtGui.QMessageBox.warning(
+        None,
+        tr("error_title"),
+        tr("error_select_cells")
+    )
+else:
+    selected = sheet.ViewObject.getView().selectedCells()
+    if not selected:
+        QtGui.QMessageBox.information(
+            None,
+            tr("no_selection_title"),
+            tr("no_selection_message")
+        )
+    else:
+        QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
+        dlg = RefDialog2(sheet)
+        dlg.show()
