@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/05/06 07:33"  # YYYY/MM/DD
+__Date__ = "2026/05/06 11:09"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -842,6 +842,25 @@ class RefDialog2(QtGui.QDialog):
 
         # Premier affichage
         self.recompute()
+
+    def wait_for_recompute(self):
+        from PySide import QtCore
+        import FreeCAD as App
+
+        while True:
+            busy = False
+
+            # On surveille UNIQUEMENT les objets en Recompute
+            for obj in App.ActiveDocument.Objects:
+                if hasattr(obj, "State") and "Recompute" in obj.State:
+                    busy = True
+                    break
+
+            if not busy:
+                break
+
+            QtCore.QThread.msleep(10)
+            App.processEvents()
 
     # --------------------------------------------------------
     # Colonnes : construction des 5 champs
@@ -1831,31 +1850,55 @@ class RefDialog2(QtGui.QDialog):
             # --- FORMULE SUR CELLULE SPREADSHEET ---
             if column == 3:
                 try:
+                    # --- 1) État initial des objets invalides ---
+                    invalid_before = {
+                        obj.Name
+                        for obj in App.ActiveDocument.Objects
+                        if hasattr(obj, "State") and "Invalid" in obj.State
+                    }
+
+                    # --- 2) Appliquer la formule ---
                     sheet.set(local, new_value)
                     sheet.recompute()
 
-                    # --- Vérifier l'état du Spreadsheet ---
-                    state = sheet.State
-                    if "Invalid" in state:
+                    # --- 3) Recompute global ---
+                    App.ActiveDocument.recompute()
+                    print("début wait")
+                    self.wait_for_recompute()
+                    print("fin wait")
 
+                    # --- 4) État final des objets invalides ---
+                    invalid_after = {
+                        obj.Name
+                        for obj in App.ActiveDocument.Objects
+                        if hasattr(obj, "State") and "Invalid" in obj.State
+                    }
+
+                    # Nouveaux objets invalides
+                    new_invalid = invalid_after - invalid_before
+
+                    # --- 5) Vérifier l'état du Spreadsheet OU du document ---
+                    if "Invalid" in sheet.State or new_invalid:
                         keep = ask_keep_invalid_change(
                             tr("spreadsheet_invalid_title"),
                             tr("spreadsheet_invalid_msg")
                         )
 
                         if not keep:
-                            raise ValueError("Spreadsheet became invalid")
+                            raise ValueError("Spreadsheet or dependent objects became invalid")
                         else:
                             self.recompute()
                             return
 
-                    # --- Vérifier si FreeCAD a mis un ERR dans la cellule ---
+                    # --- 6) Vérifier si FreeCAD a mis un ERR dans la cellule ---
                     val = sheet.get(local)
                     if isinstance(val, str) and val.startswith("ERR"):
                         raise ValueError("Invalid formula")
 
+                    # --- 7) Tout est OK : rafraîchir l'arbre ---
                     self.recompute()
-                    App.ActiveDocument.recompute()
+
+
 
                 except Exception as e:
                     print("Formula CELL ERROR:", e)
