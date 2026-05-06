@@ -440,7 +440,6 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
         return
 
     for prop, expr in obj.ExpressionEngine:
-        # FreeCAD renvoie parfois ".Placement.Base.x" → on retire le. du départ
         if prop.startswith("."):
             prop = prop[1:]
 
@@ -469,11 +468,9 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
             except:
                 value = None
                 ctype = None
-
         else:
             try:
                 if "." in prop:
-                    # Gestion des propriétés imbriquées : Placement.Base.x
                     parts = prop.split(".")
                     attr = obj
                     for p in parts:
@@ -484,6 +481,7 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
             except:
                 value = None
 
+
         graph[ref_obj]["value"] = value
         graph[ref_obj]["constraint_type"] = ctype
 
@@ -491,19 +489,44 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
         parents_bruts = extract_raw_refs_for_graph(expr, None, alias_map)
 
         for p in parents_bruts:
-
-            #  Trouver la feuille correcte
             sheet_guess = guess_sheet_from_ref(p, alias_map, label_to_name)
-
-            #  Normaliser correctement
             p_norm = normalize_ref(p, sheet_guess, label_to_name, alias_map)
             if not p_norm:
                 continue
 
             ajouter_noeud_si_absent(graph, p_norm)
-
             graph[ref_obj]["parents"].add(p_norm)
             graph[p_norm]["children"].add(ref_obj)
+
+            # --- RÉCURSIVITÉ : suivre les expressions des objets et propriétés référencés ---
+            if "." in p_norm:  # ex: Pad.Length, Sketch.Constraints[3], Body.Placement.Base.x
+                obj2_name, prop2 = p_norm.split(".", 1)
+                obj2 = App.ActiveDocument.getObject(obj2_name)
+
+                if obj2:
+                    # 1) Récursivité sur l'objet lui-même (optionnel si déjà traité ailleurs)
+                    traiter_objet(obj2, graph, label_to_name, alias_map)
+
+                    # 2) Récursivité sur la propriété référencée
+                    if hasattr(obj2, "ExpressionEngine"):
+                        for propX, exprX in obj2.ExpressionEngine:
+                            if propX == prop2:
+                                ref_prop = obj2_name + "." + prop2
+                                ajouter_noeud_si_absent(graph, ref_prop)
+
+                                graph[ref_prop]["formula"] = exprX
+                                graph[ref_prop]["label"] = obj2.Label
+                                graph[ref_prop]["value"] = None
+                                graph[ref_prop]["constraint_type"] = None
+
+                                parents2 = extract_raw_refs_for_graph(exprX, obj2_name, alias_map)
+                                for p2 in parents2:
+                                    sheet_guess2 = guess_sheet_from_ref(p2, alias_map, label_to_name)
+                                    p2_norm = normalize_ref(p2, sheet_guess2, label_to_name, alias_map)
+                                    if p2_norm:
+                                        ajouter_noeud_si_absent(graph, p2_norm)
+                                        graph[ref_prop]["parents"].add(p2_norm)
+                                        graph[p2_norm]["children"].add(ref_prop)
 
 
 def build_graph():
@@ -629,15 +652,29 @@ def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=N
 
     return visited
 
-def ask_keep_invalid_change(title, message):
+
+def ask_keep_invalid_change(title, message, allow_keep=True):
     box = QtGui.QMessageBox(FreeCADGui.getMainWindow())
     box.setIcon(QtGui.QMessageBox.Warning)
     box.setWindowTitle(title)
     box.setText(message)
+
+    # Toujours ajouter Annuler
     btn_cancel = box.addButton(tr("btn_cancel"), QtGui.QMessageBox.RejectRole)
-    btn_accept = box.addButton(tr("btn_accept_anyway"), QtGui.QMessageBox.AcceptRole)
+
+    # Ajouter "Accepter quand même" seulement si allow_keep=True
+    if allow_keep:
+        btn_accept = box.addButton(tr("btn_accept_anyway"), QtGui.QMessageBox.AcceptRole)
+    else:
+        btn_accept = None
+
     box.exec()
-    return box.clickedButton() == btn_accept
+
+    # Si le bouton existe et a été cliqué
+    if allow_keep and box.clickedButton() == btn_accept:
+        return True
+
+    return False
 
 
 
@@ -1414,7 +1451,6 @@ class RefDialog2(QtGui.QDialog):
 
             # --- Récursion ---
             self.add_out_recursive(item, c, reachable, root_ref)
-
 
     def build_tree(self, root):
 
