@@ -677,7 +677,6 @@ def ask_keep_invalid_change(title, message, allow_keep=True):
     return False
 
 
-
 class RefDialog2(QtGui.QDialog):
     def __init__(self, sheet):
         super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
@@ -1367,7 +1366,7 @@ class RefDialog2(QtGui.QDialog):
     # --------------------------------------------------------
     # BUILD TREE
     # --------------------------------------------------------
-    def add_in_recursive(self, parent_item, ref, reachable, root_ref):
+    def OLD_add_in_recursive(self, parent_item, ref, reachable, root_ref):
 
         for p in sorted(self.graph[ref]["parents"]):
             if p not in reachable:
@@ -1383,7 +1382,7 @@ class RefDialog2(QtGui.QDialog):
             item.setData(0, QtCore.Qt.UserRole, p)
 
             # --- Rendre éditables les colonnes 1 et 3 ---
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+            # item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
 
             # --- Tooltip enrichi ---
             tooltip = f"Name : {node.get('ref', '')}"
@@ -1416,7 +1415,7 @@ class RefDialog2(QtGui.QDialog):
             # --- Récursion ---
             self.add_in_recursive(item, p, reachable, root_ref)
 
-    def add_out_recursive(self, parent_item, ref, reachable, root_ref):
+    def OLD_add_out_recursive(self, parent_item, ref, reachable, root_ref):
 
         for c in sorted(self.graph[ref]["children"]):
             if c not in reachable:
@@ -1432,7 +1431,7 @@ class RefDialog2(QtGui.QDialog):
             item.setData(0, QtCore.Qt.UserRole, c)
 
             # --- Rendre éditables les colonnes 1 et 3 ---
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+            # item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
 
             # --- Tooltip enrichi ---
             tooltip = f"Name : {node.get('ref', '')}"
@@ -1464,6 +1463,67 @@ class RefDialog2(QtGui.QDialog):
 
             # --- Récursion ---
             self.add_out_recursive(item, c, reachable, root_ref)
+
+    def add_recursive_common(self, parent_item, ref, reachable, root_ref,
+                             relation_key, recursive_func):
+
+        for child_ref in sorted(self.graph[ref][relation_key]):
+            if child_ref not in reachable:
+                continue
+
+            if not self.should_display(child_ref, root_ref, reachable, relation_key):
+                continue
+
+            node = self.graph[child_ref]
+            cols = self.enrich_columns(child_ref, node)
+
+            item = QtGui.QTreeWidgetItem(parent_item, cols)
+            item.setData(0, QtCore.Qt.UserRole, child_ref)
+            # Rendre l’item éditable (les colonnes interdites sont bloquées par le délégué)
+            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+            # --- Tooltip enrichi ---
+            tooltip = f"Name : {node.get('ref', '')}"
+
+            if node.get("kind") == "cell":
+                tooltip += f"\nAlias : {node.get('label', '')}"
+            else:
+                tooltip += f"\nLabel : {node.get('label', '')}"
+
+            tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
+            tooltip += f"\n{tr('value')}: {node.get('value', '')}"
+
+            ctype = node.get("constraint_type")
+            if ctype:
+                tooltip += f"\nType: {ctype}"
+
+            for col in range(self.tree.columnCount()):
+                item.setToolTip(col, tooltip)
+
+            # --- Données internes pour clic droit ---
+            if node["kind"] == "property" and node["property"].startswith("Constraints["):
+                try:
+                    idx = int(node["property"][len("Constraints["):-1])
+                    item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
+                    item.setData(0, QtCore.Qt.UserRole + 2, idx)
+                except:
+                    pass
+
+            # --- Récursion ---
+            recursive_func(item, child_ref, reachable, root_ref)
+
+    def add_in_recursive(self, parent_item, ref, reachable, root_ref):
+        self.add_recursive_common(
+            parent_item, ref, reachable, root_ref,
+            relation_key="parents",
+            recursive_func=self.add_in_recursive
+        )
+
+    def add_out_recursive(self, parent_item, ref, reachable, root_ref):
+        self.add_recursive_common(
+            parent_item, ref, reachable, root_ref,
+            relation_key="children",
+            recursive_func=self.add_out_recursive
+        )
 
     def build_tree(self, root):
 
@@ -1695,7 +1755,6 @@ class RefDialog2(QtGui.QDialog):
 
         # Redonner le focus au Spreadsheet
         self.restoreSpreadsheetFocus()
-
 
     # ---------------------------------------------------------
     # Vérifie si un sketch est en mode édition
