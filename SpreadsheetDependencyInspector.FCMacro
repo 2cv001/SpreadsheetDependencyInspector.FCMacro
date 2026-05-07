@@ -1922,6 +1922,33 @@ class RefDialog2(QtGui.QDialog):
                         self._editing = False
 
                 return
+            # ============================================================
+            # === LABEL D’UN OBJET FREECAD (Sketch, Body, Pad, etc.) =====
+            # ============================================================
+            if column == 1 and kind == "property":
+                # print('label d un objet changé')
+                try:
+                    raw_name = node.get("object")
+                    obj_name_only = raw_name.split(".")[0]
+                    obj = App.ActiveDocument.getObject(obj_name_only)
+                    # print('Nom objet parent :', obj_name_only)
+
+                    if obj is None:
+                        raise ValueError(f"Object not found: {obj_name_only}")
+
+                    obj.Label = new_value
+                    node["label"] = new_value
+
+                    App.ActiveDocument.recompute()
+                    self.recompute()
+
+                except Exception as e:
+                    print("Label OBJECT ERROR:", e)
+                    self._editing = True
+                    item.setText(column, old_value)
+                    self._editing = False
+
+                return
 
             # ============================================================
             # === CELLULE SPREADSHEET ====================================
@@ -1942,7 +1969,9 @@ class RefDialog2(QtGui.QDialog):
             if column == 1:
                 try:
                     sheet.setAlias(local, new_value)
-                    sheet.recompute()
+                    #sheet.recompute()
+
+                    App.ActiveDocument.recompute()
                     self.recompute()
 
                 except Exception as e:
