@@ -4,7 +4,7 @@ __Name__ = "Spreadsheet Dependency Inspector"
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Author__ = "2cv001"
 __Title__ = "Spreadsheet Dependency Inspector"
-__Date__ = "2026/05/07 18:29"  # YYYY/MM/DD
+__Date__ = "2026/05/07 22:35"  # YYYY/MM/DD
 __Version__ = __Date__
 __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -316,7 +316,7 @@ def openSketchInEditMode(sketch):
         return False
 
 
-def ajouter_noeud_si_absent(
+def create_or_update_node(
     graph,
     ref,
     kind=None,
@@ -324,6 +324,8 @@ def ajouter_noeud_si_absent(
     prop_name=None,
     sheet_name=None,
     cell_name=None,
+    fc_parent=None,
+    fc_parent_label=None,
 ):
     if ref not in graph:
         graph[ref] = {
@@ -341,23 +343,31 @@ def ajouter_noeud_si_absent(
             "errors": set(),
             "parents": set(),
             "children": set(),
+            "fc_parent": fc_parent,
+            "fc_parent_label": fc_parent_label,
+
         }
     else:
-        # 🔥 Mise à jour du kind si on découvre plus tard que c’est une cellule
+        #  Mise à jour du kind si on découvre plus tard que c’est une cellule
         if kind is not None and graph[ref]["kind"] != kind:
             graph[ref]["kind"] = kind
 
-        # 🔥 Mise à jour des infos de cellule
+        #  Mise à jour des infos de cellule
         if sheet_name is not None:
             graph[ref]["sheet"] = sheet_name
         if cell_name is not None:
             graph[ref]["cell"] = cell_name
 
-        # 🔥 Mise à jour des infos d'objet FreeCAD
+        #  Mise à jour des infos d'objet FreeCAD
         if obj_name is not None:
             graph[ref]["object"] = obj_name
         if prop_name is not None:
             graph[ref]["property"] = prop_name
+        if fc_parent is not None:
+            graph[ref]["fc_parent"] = fc_parent
+
+        if fc_parent_label is not None:
+            graph[ref]["fc_parent_label"] = fc_parent_label
 
 
 def construire_label_to_name():
@@ -397,7 +407,7 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
         # Nom canonique : datas.D4
         cell_ref = f"{sheet.Name}.{addr}"
 
-        ajouter_noeud_si_absent(
+        create_or_update_node(
             graph,
             ref=cell_ref,
             kind="cell",
@@ -428,7 +438,7 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
                 if not norm:
                     continue
 
-                ajouter_noeud_si_absent(graph, norm)
+                create_or_update_node(graph, norm)
 
                 graph[cell_ref]["parents"].add(norm)
                 graph[norm]["children"].add(cell_ref)
@@ -445,17 +455,36 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
 
         ref_obj = obj.Name + "." + prop
 
-        ajouter_noeud_si_absent(
+        # --- 1) Trouver le parent FreeCAD réel ---
+        parent = None
+
+        # Parent PartDesign (Pad, Pocket, Sketch…)
+        if hasattr(obj, "getParentGeoFeatureGroup"):
+            parent = obj.getParentGeoFeatureGroup()
+
+        # Fallback : InList (Groupes, Part, etc.)
+        if not parent and hasattr(obj, "InList") and obj.InList:
+            parent = obj.InList[0]
+
+        fc_parent = parent.Name if parent else None
+        fc_parent_label = parent.Label if parent else None
+
+        # --- 2) Créer ou mettre à jour le nœud ---
+        create_or_update_node(
             graph,
             ref=ref_obj,
             kind="property",
             obj_name=obj.Name,
             prop_name=prop,
+            fc_parent=fc_parent,
+            fc_parent_label=fc_parent_label,
         )
 
+        # --- 3) Infos de base ---
         graph[ref_obj]["formula"] = expr
         graph[ref_obj]["label"] = obj.Label
 
+        # --- 4) Valeur et type de contrainte ---
         value = None
         ctype = None
 
@@ -481,11 +510,10 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
             except:
                 value = None
 
-
         graph[ref_obj]["value"] = value
         graph[ref_obj]["constraint_type"] = ctype
 
-        # --- DÉPENDANCES ---
+        # --- 5) DÉPENDANCES ---
         parents_bruts = extract_raw_refs_for_graph(expr, None, alias_map)
 
         for p in parents_bruts:
@@ -494,25 +522,25 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
             if not p_norm:
                 continue
 
-            ajouter_noeud_si_absent(graph, p_norm)
+            create_or_update_node(graph, p_norm)
             graph[ref_obj]["parents"].add(p_norm)
             graph[p_norm]["children"].add(ref_obj)
 
-            # --- RÉCURSIVITÉ : suivre les expressions des objets et propriétés référencés ---
+            # --- 6) RÉCURSIVITÉ ---
             if "." in p_norm:  # ex: Pad.Length, Sketch.Constraints[3], Body.Placement.Base.x
                 obj2_name, prop2 = p_norm.split(".", 1)
                 obj2 = App.ActiveDocument.getObject(obj2_name)
 
                 if obj2:
-                    # 1) Récursivité sur l'objet lui-même (optionnel si déjà traité ailleurs)
+                    # Récursivité sur l'objet
                     traiter_objet(obj2, graph, label_to_name, alias_map)
 
-                    # 2) Récursivité sur la propriété référencée
+                    # Récursivité sur la propriété référencée
                     if hasattr(obj2, "ExpressionEngine"):
                         for propX, exprX in obj2.ExpressionEngine:
                             if propX == prop2:
                                 ref_prop = obj2_name + "." + prop2
-                                ajouter_noeud_si_absent(graph, ref_prop)
+                                create_or_update_node(graph, ref_prop)
 
                                 graph[ref_prop]["formula"] = exprX
                                 graph[ref_prop]["label"] = obj2.Label
@@ -524,7 +552,7 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
                                     sheet_guess2 = guess_sheet_from_ref(p2, alias_map, label_to_name)
                                     p2_norm = normalize_ref(p2, sheet_guess2, label_to_name, alias_map)
                                     if p2_norm:
-                                        ajouter_noeud_si_absent(graph, p2_norm)
+                                        create_or_update_node(graph, p2_norm)
                                         graph[ref_prop]["parents"].add(p2_norm)
                                         graph[p2_norm]["children"].add(ref_prop)
 
@@ -1382,23 +1410,12 @@ class RefDialog2(QtGui.QDialog):
 
             item = QtGui.QTreeWidgetItem(parent_item, cols)
             item.setData(0, QtCore.Qt.UserRole, child_ref)
+
             # Rendre l’item éditable (les colonnes interdites sont bloquées par le délégué)
             item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
-            # --- Tooltip enrichi ---
-            tooltip = f"Name : {node.get('ref', '')}"
 
-            if node.get("kind") == "cell":
-                tooltip += f"\nAlias : {node.get('label', '')}"
-            else:
-                tooltip += f"\nLabel : {node.get('label', '')}"
-
-            tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
-            tooltip += f"\n{tr('value')}: {node.get('value', '')}"
-
-            ctype = node.get("constraint_type")
-            if ctype:
-                tooltip += f"\nType: {ctype}"
-
+            # --- Nouveau tooltip centralisé ---
+            tooltip = self.build_tooltip(child_ref)
             for col in range(self.tree.columnCount()):
                 item.setToolTip(col, tooltip)
 
@@ -1427,6 +1444,57 @@ class RefDialog2(QtGui.QDialog):
             relation_key="children",
             recursive_func=self.add_out_recursive
         )
+
+    def build_tooltip(self, ref):
+        node = self.graph[ref]
+        lines = []
+
+        # --- Parent FreeCAD ---
+        if node.get("fc_parent"):
+            parent = node["fc_parent"]
+            parent_label = node.get("fc_parent_label") or parent
+            lines.append(f"Parent : {parent_label} ({parent})")
+
+        # --- Spreadsheet + Cell (pour les cellules) ---
+        if node.get("sheet"):
+            lines.append(f"Spreadsheet : {node['sheet']}")
+        if node.get("cell"):
+            lines.append(f"Cell : {node['cell']}")
+
+        # --- Name (uniquement pour objets FreeCAD) ---
+        if node.get("object"):
+            lines.append(f"Name : {node['object']}")
+
+        # --- Label (uniquement pour objets FreeCAD) ---
+        if node.get("kind") != "cell" and node.get("label"):
+            lines.append(f"Label : {node['label']}")
+
+        # --- Alias (pour les cellules) ---
+        if node.get("alias"):
+            lines.append(f"Alias : {node['alias']}")
+
+        # --- Property (pour objets FreeCAD) ---
+        if node.get("property"):
+            lines.append(f"Property : {node['property']}")
+
+        # --- Expression (toujours avant Value) ---
+        if node.get("formula"):
+            lines.append(f"Expression : {node['formula']}")
+
+        # --- Value ---
+        if node.get("value") is not None:
+            lines.append(f"Value : {node['value']}")
+
+        # --- Constraint type ---
+        if node.get("constraint_type"):
+            lines.append(f"Constraint : {node['constraint_type']}")
+
+        # --- Errors ---
+        if node.get("errors"):
+            for err in node["errors"]:
+                lines.append(f"Error : {err}")
+
+        return "\n".join(lines)
 
     def build_tree(self, root):
 
@@ -1491,24 +1559,7 @@ class RefDialog2(QtGui.QDialog):
             #root_item.setFlags(flags)
 
             # Tooltip enrichi
-            tooltip = f"Name : {node.get('ref', '')}"
-
-            if node.get("kind") == "cell":
-                tooltip += f"\nAlias : {node.get('label', '')}"
-            else:
-                tooltip += f"\nLabel : {node.get('label', '')}"
-
-            tooltip += f"\n{tr('content')}: {node.get('formula', '')}"
-
-            value = node.get("value")
-            if value is not None:
-                tooltip += f"\n{tr('value')}: {value}"
-
-            ctype = node.get("constraint_type")
-            if ctype:
-                tooltip += f"\nType: {ctype}"
-                #tooltip += f"\n{tr('hint_constraint')}"
-
+            tooltip = self.build_tooltip(root)
             for col in range(self.tree.columnCount()):
                 root_item.setToolTip(col, tooltip)
 
