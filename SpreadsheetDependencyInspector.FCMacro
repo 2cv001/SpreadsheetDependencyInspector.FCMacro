@@ -2,7 +2,7 @@
 
 __Title__ = "Spreadsheet_Dependency_Inspector"
 __Author__ = "2cv001"
-__Date__ = "2026/05/08 20:22"  # YYYY/MM/DD
+__Date__ = "2026/05/09 07:15"  # YYYY/MM/DD
 __Version__ = __Date__
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -81,8 +81,8 @@ TRANSLATIONS = {
         "filter_constraints": "Contraintes",
         "filter_others": "Autres",
         "show_names": "Noms",
-        "show_labels_alias": "Label et alias",
-        "show_constraint_types": "Type de contrainte",
+        "show_labels_alias": "Label/alias",
+        "show_constraint_types": "Type",
         "lines_shown": "Lignes",
         "hint_open_sketch": "Double clic sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée."
             "Simple clic pour éditer un lLbel/Alias ou une expression",
@@ -152,8 +152,8 @@ TRANSLATIONS = {
         "filter_constraints": "Constraints",
         "filter_others": "Others",
         "show_names": "Names",
-        "show_labels_alias": "label and alias",
-        "show_constraint_types": "Constraint type",
+        "show_labels_alias": "label/alias",
+        "show_constraint_types": "type",
         "middle_group": "Columns",
         "hint_open_sketch": "Double‑click a constraint row to open the sketch with the constraint selected."
             " Simple click to edit a Label/Alias or an expression.",
