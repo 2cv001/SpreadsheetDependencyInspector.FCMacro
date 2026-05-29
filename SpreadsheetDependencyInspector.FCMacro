@@ -2,11 +2,12 @@
 
 __Title__ = "Spreadsheet_Dependency_Inspector"
 __Author__ = "2cv001"
-__Date__ = "2026/05/09 07:15"  # YYYY/MM/DD
+__Date__ = "2026/05/29 10:00"  # YYYY/MM/DD
 __Version__ = __Date__
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
-__Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
+__Icon__ = "https://wiki.freecad.org/images/d/dc/Macro_Sketch_Constraint_From_Spreadsheet.svg"
+# __Icon__ = "https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png"
 __Name__ = "Spreadsheet Dependency Inspector"
 __License__ = "Apache-2.0"
 # https://wiki.freecad.org/File:SpreadsheetDependencyInspector.png
