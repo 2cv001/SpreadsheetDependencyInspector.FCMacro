@@ -1,4 +1,11 @@
 # SpreadsheetDependencyInspector.FCMacro
+# -*- coding: utf-8 -*-
+# FreeCAD Macro
+# -----------------------------------------------------------------------------
+#  Spreadsheet Dependency Inspector
+# Analyzes the dependencies between FreeCAD spreadsheet cells
+# and the links between cells and object properties."
+# -----------------------------------------------------------------------------
 
 __Title__ = "Spreadsheet_Dependency_Inspector"
 __Author__ = "2cv001"
