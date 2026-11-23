@@ -272,8 +272,16 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
     if not formula:
         return set()
 
-    formula = str(formula)
+    # '$' marque seulement une référence absolue ($A$1 = A1)
+    formula = str(formula).replace("$", "")
     refs = set()
+
+    # 0) Plages : A1:B5, datas.A1:B5, <<datas>>.A1:B5 (développées en cellules par normalize_refs)
+    #    puis retirées de la formule, pour que leurs extrémités ne soient pas lues à nouveau seules
+    range_pattern = r"(?:(<<[^>]+>>|[A-Za-z_][A-Za-z0-9_]*)\.)?\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b"
+    for prefix, start, end in re.findall(range_pattern, formula):
+        refs.add((prefix + "." if prefix else "") + start + ":" + end)
+    formula = re.sub(range_pattern, " ", formula)
 
     # 1) Références avec label : <<Label>>.xxx
     for r in re.findall(r"<<[^>]+>>\.[A-Za-z0-9_\.]+", formula):
@@ -283,13 +291,9 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
     for r in re.findall(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_\[\]]+)+", formula):
         refs.add(r)
 
-    # 3) Cellules simples : A12, AA14
-    for r in re.findall(r"\b[A-Z]+[0-9]+\b", formula):
+    # 3) Cellules simples : A12, AA14 (pas celles précédées d'un point : datas.A12 est lu en 1 ou 2)
+    for r in re.findall(r"(?<![.\w])[A-Z]+[0-9]+\b", formula):
         refs.add(r)
-
-    # 4) Plages : A1:B5
-    for r in re.findall(r"\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b", formula):
-        refs.add(r[0] + ":" + r[1])
 
     # 5) 🔥 Détection des alias (Longueur, Largeur, etc.)
     tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", formula)
@@ -472,14 +476,11 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
             raw_refs = extract_raw_refs_for_graph(content, sheet.Name, alias_map)
 
             for raw in raw_refs:
-                norm = normalize_ref(raw, sheet.Name, label_to_name, alias_map)
-                if not norm:
-                    continue
+                for norm in normalize_refs(raw, sheet.Name, label_to_name, alias_map):
+                    create_or_update_node(graph, norm)
 
-                create_or_update_node(graph, norm)
-
-                graph[cell_ref]["parents"].add(norm)
-                graph[norm]["children"].add(cell_ref)
+                    graph[cell_ref]["parents"].add(norm)
+                    graph[norm]["children"].add(cell_ref)
 
 
 # ===============================================================================
@@ -561,43 +562,40 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
 
         for p in parents_bruts:
             sheet_guess = guess_sheet_from_ref(p, alias_map, label_to_name)
-            p_norm = normalize_ref(p, sheet_guess, label_to_name, alias_map)
-            if not p_norm:
-                continue
+            for p_norm in normalize_refs(p, sheet_guess, label_to_name, alias_map):
+                create_or_update_node(graph, p_norm)
+                graph[ref_obj]["parents"].add(p_norm)
+                graph[p_norm]["children"].add(ref_obj)
 
-            create_or_update_node(graph, p_norm)
-            graph[ref_obj]["parents"].add(p_norm)
-            graph[p_norm]["children"].add(ref_obj)
+                # --- 6) RÉCURSIVITÉ ---
+                if "." in p_norm:  # ex: Pad.Length, Sketch.Constraints[3], Body.Placement.Base.x
+                    obj2_name, prop2 = p_norm.split(".", 1)
+                    obj2 = App.ActiveDocument.getObject(obj2_name)
 
-            # --- 6) RÉCURSIVITÉ ---
-            if "." in p_norm:  # ex: Pad.Length, Sketch.Constraints[3], Body.Placement.Base.x
-                obj2_name, prop2 = p_norm.split(".", 1)
-                obj2 = App.ActiveDocument.getObject(obj2_name)
+                    if obj2:
+                        # Récursivité sur l'objet
+                        traiter_objet(obj2, graph, label_to_name, alias_map)
 
-                if obj2:
-                    # Récursivité sur l'objet
-                    traiter_objet(obj2, graph, label_to_name, alias_map)
+                        # Récursivité sur la propriété référencée
+                        if hasattr(obj2, "ExpressionEngine"):
+                            for propX, exprX in obj2.ExpressionEngine:
+                                if propX == prop2:
+                                    ref_prop = obj2_name + "." + prop2
+                                    create_or_update_node(graph, ref_prop)
 
-                    # Récursivité sur la propriété référencée
-                    if hasattr(obj2, "ExpressionEngine"):
-                        for propX, exprX in obj2.ExpressionEngine:
-                            if propX == prop2:
-                                ref_prop = obj2_name + "." + prop2
-                                create_or_update_node(graph, ref_prop)
+                                    graph[ref_prop]["formula"] = exprX
+                                    graph[ref_prop]["label"] = obj2.Label
+                                    graph[ref_prop]["value"] = None
+                                    graph[ref_prop]["constraint_type"] = None
 
-                                graph[ref_prop]["formula"] = exprX
-                                graph[ref_prop]["label"] = obj2.Label
-                                graph[ref_prop]["value"] = None
-                                graph[ref_prop]["constraint_type"] = None
-
-                                parents2 = extract_raw_refs_for_graph(exprX, obj2_name, alias_map)
-                                for p2 in parents2:
-                                    sheet_guess2 = guess_sheet_from_ref(p2, alias_map, label_to_name)
-                                    p2_norm = normalize_ref(p2, sheet_guess2, label_to_name, alias_map)
-                                    if p2_norm:
-                                        create_or_update_node(graph, p2_norm)
-                                        graph[ref_prop]["parents"].add(p2_norm)
-                                        graph[p2_norm]["children"].add(ref_prop)
+                                    parents2 = extract_raw_refs_for_graph(exprX, obj2_name, alias_map)
+                                    for p2 in parents2:
+                                        sheet_guess2 = guess_sheet_from_ref(p2, alias_map, label_to_name)
+                                        for p2_norm in normalize_refs(p2, sheet_guess2,
+                                                                      label_to_name, alias_map):
+                                            create_or_update_node(graph, p2_norm)
+                                            graph[ref_prop]["parents"].add(p2_norm)
+                                            graph[p2_norm]["children"].add(ref_prop)
 
 
 def build_graph():
@@ -652,6 +650,13 @@ def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
     if "." in ref:
         sheet, key = ref.split(".", 1)
 
+        # Label écrit sans << >> (ex : datas.Longueur pour le tableur nommé Spreadsheet) :
+        # comme FreeCAD, le nom interne est prioritaire, sinon on cherche le label
+        if sheet not in alias_map and sheet in label_to_name \
+                and App.ActiveDocument.getObject(sheet) is None:
+            sheet = label_to_name[sheet]
+            ref = sheet + "." + key
+
         # 🔥 Vérifier si key est un alias
         if sheet in alias_map:
             if key in alias_map[sheet]:
@@ -674,6 +679,35 @@ def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
 
     # 5) Sinon, on renvoie tel quel
     return ref
+
+
+def normalize_refs(ref, current_sheet_name, label_to_name, alias_map):
+    """
+    normalize_ref(), et une plage (datas.A1:B3) donne ses cellules non vides.
+    Retourne une liste de références (vide si ref est vide).
+    """
+    norm = normalize_ref(ref, current_sheet_name, label_to_name, alias_map)
+    if not norm:
+        return []
+    match = re.fullmatch(r"([^.]+)\.([A-Z]+[0-9]+):([A-Z]+[0-9]+)", norm)
+    if not match:
+        return [norm]
+    sheet_name, start, end = match.groups()
+    sheet = App.ActiveDocument.getObject(sheet_name)
+    xml = getattr(getattr(sheet, "cells", None), "Content", None)
+    if not xml:
+        return []
+    (row1, col1), (row2, col2) = addr_to_row_col(start), addr_to_row_col(end)
+    rows = range(min(row1, row2), max(row1, row2) + 1)
+    cols = range(min(col1, col2), max(col1, col2) + 1)
+    cells = []
+    for cell in ET.fromstring(xml).findall("Cell"):  # cellules non vides du tableur
+        addr = cell.get("address")
+        if addr and cell.get("content"):
+            row, col = addr_to_row_col(addr)
+            if row in rows and col in cols:
+                cells.append(sheet_name + "." + addr)
+    return cells
 
 
 def guess_sheet_from_ref(ref, alias_map, label_to_name):
