@@ -9,7 +9,7 @@
 
 __Title__ = "Spreadsheet_Dependency_Inspector"
 __Author__ = "2cv001"
-__Date__ = "2026/11/23 10:23"  # YYYY/MM/DD
+__Date__ = "2026/11/23 14:29"  # YYYY/MM/DD
 __Version__ = __Date__
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -20,6 +20,7 @@ __License__ = "Apache-2.0"
 
 import xml.etree.ElementTree as ET
 import re
+from collections import namedtuple
 import os
 from PySide import QtGui, QtCore
 import configparser
@@ -90,8 +91,9 @@ TRANSLATIONS = {
         "show_names": "Noms",
         "show_labels_alias": "Label/alias",
         "show_constraint_types": "Type",        "lines_shown": "Lignes",
-        "hint_open_sketch": "Double clic sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée."
-            "Simple clic pour éditer un lLbel/Alias ou une expression",
+        "hint_open_sketch": "Double clic : sur une ligne, ouvre la cellule, la propriété ou la contrainte "
+            "(esquisse ouverte) ; dans la colonne Expression, sélectionne les termes de l'expression. "
+            "Simple clic pour éditer un Label/Alias ou une expression.",
 
         # Sections arbre
         "uses": "Utilise",
@@ -114,7 +116,10 @@ TRANSLATIONS = {
 
         # Divers
         "error_title": "Erreur",
-        "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
+        "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet, "
+                              "ou une propriété dans la fenêtre des propriétés.",
+        "property_no_dependency": "La propriété {prop} n'utilise aucune cellule ni propriété, "
+                                  "et aucune ne l'utilise.",
         "sketch_not_open_title": "Sketch non ouvert",
         "sketch_not_open_msg": "Impossible d'ouvrir le sketch en mode édition : aucune vue 3D n'est ouverte "
                                "pour ce document, et la macro n'a pas pu en ouvrir une."
@@ -163,8 +168,9 @@ TRANSLATIONS = {
         "show_names": "Names",
         "show_labels_alias": "label/alias",
         "show_constraint_types": "type",        "middle_group": "Columns",
-        "hint_open_sketch": "Double‑click a constraint row to open the sketch with the constraint selected."
-            " Simple click to edit a Label/Alias or an expression.",
+        "hint_open_sketch": "Double-click: on a row, opens the cell, the property or the constraint "
+            "(sketch opened); in the Expression column, selects the terms of the expression. "
+            "Simple click to edit a Label/Alias or an expression.",
 
         # Sections arbre
         "uses": "Uses",
@@ -187,7 +193,8 @@ TRANSLATIONS = {
 
         #Divers
         "error_title": "Error",
-        "error_select_cells": "Select cells in a Spreadsheet.",
+        "error_select_cells": "Select cells in a Spreadsheet, or a property in the property view.",
+        "property_no_dependency": "The property {prop} uses no cell or property, and none uses it.",
         "sketch_not_open_title": "Sketch not open",
         "sketch_not_open_msg": "Unable to open the sketch in edit mode: no 3D view is open for this document, "
                                "and the macro could not open one."
@@ -272,8 +279,16 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
     if not formula:
         return set()
 
-    formula = str(formula)
+    # '$' marque seulement une référence absolue ($A$1 = A1)
+    formula = str(formula).replace("$", "")
     refs = set()
+
+    # 0) Plages : A1:B5, datas.A1:B5, <<datas>>.A1:B5 (développées en cellules par normalize_refs)
+    #    puis retirées de la formule, pour que leurs extrémités ne soient pas lues à nouveau seules
+    range_pattern = r"(?:(<<[^>]+>>|[A-Za-z_][A-Za-z0-9_]*)\.)?\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b"
+    for prefix, start, end in re.findall(range_pattern, formula):
+        refs.add((prefix + "." if prefix else "") + start + ":" + end)
+    formula = re.sub(range_pattern, " ", formula)
 
     # 1) Références avec label : <<Label>>.xxx
     for r in re.findall(r"<<[^>]+>>\.[A-Za-z0-9_\.]+", formula):
@@ -283,13 +298,9 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
     for r in re.findall(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_\[\]]+)+", formula):
         refs.add(r)
 
-    # 3) Cellules simples : A12, AA14
-    for r in re.findall(r"\b[A-Z]+[0-9]+\b", formula):
+    # 3) Cellules simples : A12, AA14 (pas celles précédées d'un point : datas.A12 est lu en 1 ou 2)
+    for r in re.findall(r"(?<![.\w])[A-Z]+[0-9]+\b", formula):
         refs.add(r)
-
-    # 4) Plages : A1:B5
-    for r in re.findall(r"\b([A-Z]+[0-9]+):([A-Z]+[0-9]+)\b", formula):
-        refs.add(r[0] + ":" + r[1])
 
     # 5) 🔥 Détection des alias (Longueur, Largeur, etc.)
     tokens = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", formula)
@@ -472,20 +483,50 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
             raw_refs = extract_raw_refs_for_graph(content, sheet.Name, alias_map)
 
             for raw in raw_refs:
-                norm = normalize_ref(raw, sheet.Name, label_to_name, alias_map)
-                if not norm:
-                    continue
+                for norm in normalize_refs(raw, sheet.Name, label_to_name, alias_map):
+                    create_or_update_node(graph, norm)
 
-                create_or_update_node(graph, norm)
-
-                graph[cell_ref]["parents"].add(norm)
-                graph[norm]["children"].add(cell_ref)
+                    graph[cell_ref]["parents"].add(norm)
+                    graph[norm]["children"].add(cell_ref)
 
 
 # ===============================================================================
-# getPropertyValue() is shared with Sketch_Constraint_From_Spreadsheet.FCMacro
-# (https://github.com/2cv001/FreeCAD-macros) : keep it identical in both macros.
+# Property selected in the property view (ex : Placement > Position > x of a Pad)
+# selectedPropertyInPropertyView() and getPropertyValue() are shared with
+# Sketch_Constraint_From_Spreadsheet.FCMacro (https://github.com/2cv001/FreeCAD-macros) :
+# keep them identical in both macros.
+#
+# How it works (the property view has no Python API) :
+# - the rows of the property view are read with Qt (tree named "propertyEditorData")
+# - top rows are groups (Base, Attachment...), their children are the properties,
+#   and below come the sub-items (Position, x...)
+# - the internal name of the property is read in its tooltip ("Name: Placement"),
+#   because the displayed name is translated ("Axe de rotation" in French)
+# - sub-items have no tooltip : their displayed label is compared with the English
+#   label translated by FreeCAD, so it works whatever the FreeCAD language
+# - the path found is checked on the object before being returned
 # ===============================================================================
+SelectedProperty = namedtuple(
+    "SelectedProperty", "obj path name typeId value editable hasSubItems"
+)
+# obj         : object owning the property (Pad, Sketch...)
+# path        : path for obj.setExpression(), same format as obj.ExpressionEngine
+#               without the leading '.' (ex 'Placement.Rotation.Axis.x')
+# name        : internal name of the property (ex 'Placement')
+# typeId      : type of the property (ex 'App::PropertyPlacement')
+# value       : current value, read on the object with the path
+# editable    : the value is editable and not greyed in the property view
+# hasSubItems : the selected row has sub-items (ex Placement, Position) : link one of them
+
+# Sub-items whose internal path differs from the label shown by FreeCAD.
+# key : property type without 'App::Property' ; value : {English label : internal path}
+# Sub-items not listed (x, y, z, named constraints...) use their displayed label.
+PROPERTY_SUB_ITEMS = {
+    "Placement": {"Position": "Base", "Axis": "Rotation.Axis", "Angle": "Rotation.Angle"},
+    "Rotation": {"Axis": "Axis", "Angle": "Angle"},
+}
+
+
 def getPropertyValue(obj, path):
     # path : as in obj.ExpressionEngine, ex 'Length', '.Placement.Base.x',
     #        'Constraints[3]' or 'Constraints.myName' (a sketch constraint object is returned)
@@ -500,6 +541,165 @@ def getPropertyValue(obj, path):
         else:
             value = getattr(value, part)
     return value
+
+
+def selectedPropertyInPropertyView(obj=None):
+    # obj : object owning the property (default : the single object selected in the tree)
+    # return a SelectedProperty, or None if no property of obj is selected
+
+    def translated(label):  # label as displayed by FreeCAD in the current language
+        return QtGui.QApplication.translate("App::Property", label)
+
+    def displayedName(name):  # 'MapMode' -> 'Map Mode', as FreeCAD displays it
+        return translated(re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name))
+
+    def pathExists(path):
+        try:
+            getPropertyValue(obj, path)
+            return True
+        except Exception:  # on purpose : AttributeError, IndexError, StopIteration...
+            return False
+
+    if obj is None:
+        selection = Gui.Selection.getSelection()
+        if len(selection) != 1:
+            return None
+        obj = selection[0]
+
+    tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
+    if tree is None:
+        return None
+    selected = [i for i in tree.selectedIndexes() if i.column() == 0]
+    index = selected[0] if selected else tree.currentIndex().siblingAtColumn(0)
+
+    rows = []  # from the top (group) down to the clicked row
+    while index.isValid():
+        rows.insert(0, index)
+        index = index.parent()
+    if len(rows) < 2:  # nothing or a group is selected
+        return None
+    propertyRow, subRows, clicked = rows[1], rows[2:], rows[-1]
+
+    # internal name of the property : in the tooltip ("Type: ...\nName: Placement\n...")
+    match = re.search(r"^Name: (\S+)$", propertyRow.data(QtCore.Qt.ToolTipRole) or "", re.M)
+    name = match.group(1) if match else None
+    if name not in obj.PropertiesList:  # no name in the tooltip (older FreeCAD) : compare displayed names
+        shown = propertyRow.data(QtCore.Qt.DisplayRole) or ""
+        name = next((p for p in obj.PropertiesList
+                     if shown in (p, displayedName(p)) or shown.replace(" ", "") == p), None)
+    if name is None:
+        return None
+    typeId = obj.getTypeIdOfProperty(name)
+
+    # sub-items : English label translated by FreeCAD, else the displayed label
+    path = name
+    subLabels = PROPERTY_SUB_ITEMS.get(typeId.split("::Property")[-1], {})
+    for level, row in enumerate(subRows):
+        shown = row.data(QtCore.Qt.DisplayRole) or ""
+        candidates = [internal for label, internal in subLabels.items()
+                      if level == 0 and shown in (label, translated(label))]
+        candidates += [shown, shown.replace(" ", "")]
+        found = next((c for c in candidates if pathExists(path + "." + c)), None)
+        if found is None:
+            print("Property path not found :", obj.Name + "." + path + " > " + shown)
+            return None
+        path += "." + found
+
+    if not pathExists(path):
+        return None
+    flags = clicked.siblingAtColumn(1).flags()
+    return SelectedProperty(
+        obj=obj,
+        path=path,
+        name=name,
+        typeId=typeId,
+        value=getPropertyValue(obj, path),
+        editable=bool(flags & QtCore.Qt.ItemIsEditable) and bool(flags & QtCore.Qt.ItemIsEnabled),
+        hasSubItems=tree.model().rowCount(clicked) > 0,
+    )
+
+
+def select_property_row(path, attempts=10):
+    # Sélectionne (en bleu, comme un clic) et montre la ligne de la propriété path
+    # (chemin interne, ex 'Length' ou 'AttachmentOffset.Base.z') dans la fenêtre des
+    # propriétés, en dépliant les niveaux nécessaires.
+    # - lignes du haut = groupes, leurs enfants = propriétés, reconnues par leur
+    #   infobulle ("Type: App::PropertyPlacement\nName: AttachmentOffset")
+    # - sous-éléments : le chemin interne est converti en libellé affiché, à l'inverse de
+    #   selectedPropertyInPropertyView() (Base -> "Position", traduit par FreeCAD)
+    # La fenêtre des propriétés se remplit un peu après la sélection de l'objet :
+    # si la ligne n'est pas encore là, nouvel essai 100 ms plus tard (attempts fois).
+    # Propre à cette macro (non partagée).
+    def translated(label):
+        return QtGui.QApplication.translate("App::Property", label)
+
+    tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
+    if tree is None:
+        return
+    model = tree.model()
+    parts = path.split(".")
+
+    # 1) la propriété
+    found, typeId = None, ""
+    for g in range(model.rowCount()):
+        group = model.index(g, 0)
+        for p in range(model.rowCount(group)):
+            index = model.index(p, 0, group)
+            tip = index.data(QtCore.Qt.ToolTipRole) or ""
+            if re.search(r"^Name: " + re.escape(parts[0]) + r"$", tip, re.M):
+                found = index
+                match = re.search(r"^Type: (\S+)$", tip, re.M)
+                typeId = match.group(1) if match else ""
+                break
+        if found is not None:
+            break
+
+    if found is None:
+        if attempts > 1:
+            QtCore.QTimer.singleShot(100, lambda: select_property_row(path, attempts - 1))
+        else:
+            print("Propriété non trouvée dans la fenêtre des propriétés :", path)
+        return
+
+    # 2) les sous-éléments (ex : Base.z -> "Position" puis "z")
+    remaining = parts[1:]
+    subLabels = PROPERTY_SUB_ITEMS.get(typeId.split("::Property")[-1], {})
+    level = 0
+    while remaining:
+        labels, used = None, 1
+        if level == 0:
+            # 1er niveau sous la propriété : libellés connus (ex Rotation.Axis -> "Axis")
+            for label, internal in subLabels.items():
+                internal_parts = internal.split(".")
+                if remaining[:len(internal_parts)] == internal_parts:
+                    labels, used = {label, translated(label)}, len(internal_parts)
+                    break
+        if labels is None:
+            labels = {remaining[0], translated(remaining[0])}
+        child = next((model.index(r, 0, found) for r in range(model.rowCount(found))
+                      if (model.index(r, 0, found).data(QtCore.Qt.DisplayRole) or "") in labels), None)
+        if child is None:  # niveau non trouvé : on s'arrête au dernier trouvé
+            print("Sous-élément non trouvé dans la fenêtre des propriétés :", path)
+            break
+        tree.expand(found)
+        found, remaining, level = child, remaining[used:], level + 1
+
+    tree.setCurrentIndex(found)
+    tree.selectionModel().select(
+        found, QtCore.QItemSelectionModel.ClearAndSelect | QtCore.QItemSelectionModel.Rows)
+    tree.scrollTo(found)
+
+    # La sélection n'est affichée en bleu que si sa fenêtre est active et a le focus.
+    # Ici, la fenêtre active est l'Inspector : activer la fenêtre qui contient la fenêtre
+    # des propriétés (la fenêtre principale de FreeCAD, ou la sienne si elle est détachée),
+    # puis lui donner le focus une fois l'activation faite.
+    def focus_property_view():
+        window = tree.window()
+        window.activateWindow()
+        tree.setFocus(QtCore.Qt.OtherFocusReason)
+
+    focus_property_view()
+    QtCore.QTimer.singleShot(100, focus_property_view)
 
 
 def traiter_objet(obj, graph, label_to_name, alias_map):
@@ -561,43 +761,40 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
 
         for p in parents_bruts:
             sheet_guess = guess_sheet_from_ref(p, alias_map, label_to_name)
-            p_norm = normalize_ref(p, sheet_guess, label_to_name, alias_map)
-            if not p_norm:
-                continue
+            for p_norm in normalize_refs(p, sheet_guess, label_to_name, alias_map):
+                create_or_update_node(graph, p_norm)
+                graph[ref_obj]["parents"].add(p_norm)
+                graph[p_norm]["children"].add(ref_obj)
 
-            create_or_update_node(graph, p_norm)
-            graph[ref_obj]["parents"].add(p_norm)
-            graph[p_norm]["children"].add(ref_obj)
+                # --- 6) RÉCURSIVITÉ ---
+                if "." in p_norm:  # ex: Pad.Length, Sketch.Constraints[3], Body.Placement.Base.x
+                    obj2_name, prop2 = p_norm.split(".", 1)
+                    obj2 = App.ActiveDocument.getObject(obj2_name)
 
-            # --- 6) RÉCURSIVITÉ ---
-            if "." in p_norm:  # ex: Pad.Length, Sketch.Constraints[3], Body.Placement.Base.x
-                obj2_name, prop2 = p_norm.split(".", 1)
-                obj2 = App.ActiveDocument.getObject(obj2_name)
+                    if obj2:
+                        # Récursivité sur l'objet
+                        traiter_objet(obj2, graph, label_to_name, alias_map)
 
-                if obj2:
-                    # Récursivité sur l'objet
-                    traiter_objet(obj2, graph, label_to_name, alias_map)
+                        # Récursivité sur la propriété référencée
+                        if hasattr(obj2, "ExpressionEngine"):
+                            for propX, exprX in obj2.ExpressionEngine:
+                                if propX == prop2:
+                                    ref_prop = obj2_name + "." + prop2
+                                    create_or_update_node(graph, ref_prop)
 
-                    # Récursivité sur la propriété référencée
-                    if hasattr(obj2, "ExpressionEngine"):
-                        for propX, exprX in obj2.ExpressionEngine:
-                            if propX == prop2:
-                                ref_prop = obj2_name + "." + prop2
-                                create_or_update_node(graph, ref_prop)
+                                    graph[ref_prop]["formula"] = exprX
+                                    graph[ref_prop]["label"] = obj2.Label
+                                    graph[ref_prop]["value"] = None
+                                    graph[ref_prop]["constraint_type"] = None
 
-                                graph[ref_prop]["formula"] = exprX
-                                graph[ref_prop]["label"] = obj2.Label
-                                graph[ref_prop]["value"] = None
-                                graph[ref_prop]["constraint_type"] = None
-
-                                parents2 = extract_raw_refs_for_graph(exprX, obj2_name, alias_map)
-                                for p2 in parents2:
-                                    sheet_guess2 = guess_sheet_from_ref(p2, alias_map, label_to_name)
-                                    p2_norm = normalize_ref(p2, sheet_guess2, label_to_name, alias_map)
-                                    if p2_norm:
-                                        create_or_update_node(graph, p2_norm)
-                                        graph[ref_prop]["parents"].add(p2_norm)
-                                        graph[p2_norm]["children"].add(ref_prop)
+                                    parents2 = extract_raw_refs_for_graph(exprX, obj2_name, alias_map)
+                                    for p2 in parents2:
+                                        sheet_guess2 = guess_sheet_from_ref(p2, alias_map, label_to_name)
+                                        for p2_norm in normalize_refs(p2, sheet_guess2,
+                                                                      label_to_name, alias_map):
+                                            create_or_update_node(graph, p2_norm)
+                                            graph[ref_prop]["parents"].add(p2_norm)
+                                            graph[p2_norm]["children"].add(ref_prop)
 
 
 def build_graph():
@@ -652,6 +849,13 @@ def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
     if "." in ref:
         sheet, key = ref.split(".", 1)
 
+        # Label écrit sans << >> (ex : datas.Longueur pour le tableur nommé Spreadsheet) :
+        # comme FreeCAD, le nom interne est prioritaire, sinon on cherche le label
+        if sheet not in alias_map and sheet in label_to_name \
+                and App.ActiveDocument.getObject(sheet) is None:
+            sheet = label_to_name[sheet]
+            ref = sheet + "." + key
+
         # 🔥 Vérifier si key est un alias
         if sheet in alias_map:
             if key in alias_map[sheet]:
@@ -674,6 +878,35 @@ def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
 
     # 5) Sinon, on renvoie tel quel
     return ref
+
+
+def normalize_refs(ref, current_sheet_name, label_to_name, alias_map):
+    """
+    normalize_ref(), et une plage (datas.A1:B3) donne ses cellules non vides.
+    Retourne une liste de références (vide si ref est vide).
+    """
+    norm = normalize_ref(ref, current_sheet_name, label_to_name, alias_map)
+    if not norm:
+        return []
+    match = re.fullmatch(r"([^.]+)\.([A-Z]+[0-9]+):([A-Z]+[0-9]+)", norm)
+    if not match:
+        return [norm]
+    sheet_name, start, end = match.groups()
+    sheet = App.ActiveDocument.getObject(sheet_name)
+    xml = getattr(getattr(sheet, "cells", None), "Content", None)
+    if not xml:
+        return []
+    (row1, col1), (row2, col2) = addr_to_row_col(start), addr_to_row_col(end)
+    rows = range(min(row1, row2), max(row1, row2) + 1)
+    cols = range(min(col1, col2), max(col1, col2) + 1)
+    cells = []
+    for cell in ET.fromstring(xml).findall("Cell"):  # cellules non vides du tableur
+        addr = cell.get("address")
+        if addr and cell.get("content"):
+            row, col = addr_to_row_col(addr)
+            if row in rows and col in cols:
+                cells.append(sheet_name + "." + addr)
+    return cells
 
 
 def guess_sheet_from_ref(ref, alias_map, label_to_name):
@@ -749,11 +982,14 @@ def ask_keep_invalid_change(title, message, allow_keep=True):
 
 
 class RefDialog2(QtGui.QDialog):
-    def __init__(self, sheet):
+    def __init__(self, sheet, root_property=None):
+        # root_property : ex 'Pad.Length' to start the tree from this property
+        #                 instead of the cells selected in the spreadsheet
         super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
 
         self.last_level = 0
         self.sheet = sheet
+        self.root_property = root_property
         self.graph = build_graph()
 
         # Flags internes
@@ -769,7 +1005,7 @@ class RefDialog2(QtGui.QDialog):
             QtCore.Qt.WindowCloseButtonHint |
             QtCore.Qt.WindowMinMaxButtonsHint
         )
-        self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
+        self.setWindowTitle(f"{tr('title')} – {self.title_target()}")
         self.setMinimumWidth(400)
 
         layout = QtGui.QVBoxLayout()
@@ -908,6 +1144,9 @@ class RefDialog2(QtGui.QDialog):
             self.tree.setItemDelegateForColumn(col, readonly)
 
         self.tree.itemDoubleClicked.connect(self.on_item_double_click_constraint)
+        # le double clic ouvre ce que désigne la ligne : il ne doit pas aussi plier / déplier
+        # la branche (les flèches ▶ ▼ et le bouton "tout déplier" restent disponibles)
+        self.tree.setExpandsOnDoubleClick(False)
 
         self.tree.setHeaderHidden(False)
         self.tree.setColumnCount(5)
@@ -1217,71 +1456,13 @@ class RefDialog2(QtGui.QDialog):
             self.tree.setFocus()
 
             # ------------------------------------------------------------
-            # 1) Détecter la feuille active
+            # 1) à 4) Point de départ : la propriété choisie au lancement,
+            #         sinon les cellules sélectionnées dans la feuille
             # ------------------------------------------------------------
-            current_view = Gui.ActiveDocument.ActiveView
-
-            # Si on est dans la vue 3D → ouvrir la feuille
-            if type(current_view).__name__ == "View3DInventorPy":
-                self.sheet.ViewObject.doubleClicked()
-                print('focus changé')
-
-                # IMPORTANT : relire la vue active
-                current_view = Gui.ActiveDocument.ActiveView
-                print('current_view', current_view)
-
-            # Essayer de récupérer la feuille via la vue
-            new_sheet = None
-            if hasattr(current_view, "getSheet"):
-                try:
-                    new_sheet = current_view.getSheet()
-                except Exception:
-                    print("getSheet() a échoué")
-
-            # Fallback : récupérer via la sélection
-            if not new_sheet:
-                sel = Gui.Selection.getSelection()
-                if sel and sel[0].TypeId == "Spreadsheet::Sheet":
-                    new_sheet = sel[0]
-                else:
-                    print("new_sheet est à None")
-
-            # Si la feuille a changé → reconstruire le graphe
-            if new_sheet and new_sheet != self.sheet:
-                self.sheet = new_sheet
-                self.graph = build_graph()
-
-            # ------------------------------------------------------------
-            # 2) Mise à jour du titre
-            # ------------------------------------------------------------
-            self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
-
-            # ------------------------------------------------------------
-            # 3) Nettoyage de l'arbre
-            # ------------------------------------------------------------
-            self.tree.clear()
-
-            # ------------------------------------------------------------
-            # 4) Lire la sélection sur la feuille
-            # ------------------------------------------------------------
-            selected = self.sheet.ViewObject.getView().selectedCells()
-            if not selected:
-                self.update_column_visibility()
-                return
-
-            # Convertir la sélection en adresses
-            addrs = []
-            for item in selected:
-                if isinstance(item, str):
-                    addrs.append(item)
-                elif len(item) == 2:
-                    addrs.append(cell_to_addr(item[0], item[1]))
-
-            roots = [
-                f"{self.sheet.Name}.{a}"
-                for a in addrs
-                if f"{self.sheet.Name}.{a}" in self.graph
-            ]
+            if self.root_property is not None:
+                roots = self.property_roots()
+            else:
+                roots = self.cell_roots()
 
             if not roots:
                 self.update_column_visibility()
@@ -1314,6 +1495,87 @@ class RefDialog2(QtGui.QDialog):
 
         finally:
             self._building = False
+
+    # --------------------------------------------------------
+    # Texte du titre : la feuille, ou la propriété de départ
+    # --------------------------------------------------------
+    def title_target(self):
+        if self.root_property is not None:
+            obj_name, _, path = self.root_property.partition(".")
+            obj = App.ActiveDocument.getObject(obj_name)
+            return (obj.Label if obj else obj_name) + "." + path
+        return self.sheet.Label
+
+    # --------------------------------------------------------
+    # Point de départ = la propriété choisie au lancement
+    # --------------------------------------------------------
+    def property_roots(self):
+        self.graph = build_graph()  # la propriété ou ses liens ont pu changer
+        self.setWindowTitle(f"{tr('title')} – {self.title_target()}")
+        self.tree.clear()
+        return [self.root_property] if self.root_property in self.graph else []
+
+    # --------------------------------------------------------
+    # Point de départ = les cellules sélectionnées dans la feuille
+    # --------------------------------------------------------
+    def cell_roots(self):
+        # 1) Détecter la feuille active
+        current_view = Gui.ActiveDocument.ActiveView
+
+        # Si on est dans la vue 3D → ouvrir la feuille
+        if type(current_view).__name__ == "View3DInventorPy":
+            self.sheet.ViewObject.doubleClicked()
+            print('focus changé')
+
+            # IMPORTANT : relire la vue active
+            current_view = Gui.ActiveDocument.ActiveView
+            print('current_view', current_view)
+
+        # Essayer de récupérer la feuille via la vue
+        new_sheet = None
+        if hasattr(current_view, "getSheet"):
+            try:
+                new_sheet = current_view.getSheet()
+            except Exception:
+                print("getSheet() a échoué")
+
+        # Fallback : récupérer via la sélection
+        if not new_sheet:
+            sel = Gui.Selection.getSelection()
+            if sel and sel[0].TypeId == "Spreadsheet::Sheet":
+                new_sheet = sel[0]
+            else:
+                print("new_sheet est à None")
+
+        # Si la feuille a changé → reconstruire le graphe
+        if new_sheet and new_sheet != self.sheet:
+            self.sheet = new_sheet
+            self.graph = build_graph()
+
+        # 2) Mise à jour du titre
+        self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
+
+        # 3) Nettoyage de l'arbre
+        self.tree.clear()
+
+        # 4) Lire la sélection sur la feuille
+        selected = self.sheet.ViewObject.getView().selectedCells()
+        if not selected:
+            return []
+
+        # Convertir la sélection en adresses
+        addrs = []
+        for item in selected:
+            if isinstance(item, str):
+                addrs.append(item)
+            elif len(item) == 2:
+                addrs.append(cell_to_addr(item[0], item[1]))
+
+        return [
+            f"{self.sheet.Name}.{a}"
+            for a in addrs
+            if f"{self.sheet.Name}.{a}" in self.graph
+        ]
 
     # --- Fonctions de catégorisation ---
     def should_display(self, ref, root_ref, reachable, branch_direction):
@@ -1459,12 +1721,6 @@ class RefDialog2(QtGui.QDialog):
             tooltip = self.build_tooltip(child_ref)
             for col in range(self.tree.columnCount()):
                 item.setToolTip(col, tooltip)
-
-            # --- Données internes pour le double clic (ouvrir le sketch sur la contrainte) ---
-            idx = constraint_index(node)
-            if idx is not None:
-                item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
-                item.setData(0, QtCore.Qt.UserRole + 2, idx)
 
             # --- Récursion ---
             recursive_func(item, child_ref, reachable, root_ref)
@@ -1699,16 +1955,57 @@ class RefDialog2(QtGui.QDialog):
         self.level_spin.setValue(DEFAULT_COLLAPSE_LEVEL)
 
     # --------------------------------------------------------
-    # Clic droit dans l'arbre : sélectionner contrainte + focus Spreadsheet
+    # Double clic dans l'arbre : le résultat dépend de la colonne
+    # - colonne Expression : sélectionne les termes de l'expression (=D5+D3 : D5 et D3,
+    #   sum(A1:A4) : les cellules non vides de la plage, Pad.Length : la propriété...)
+    # - autres colonnes : ouvre ce que désigne la ligne (cellule dans son tableur,
+    #   propriété dans l'arbre FreeCAD, contrainte dans son sketch)
     # --------------------------------------------------------
+    EXPRESSION_COLUMN = 3
+
     def on_item_double_click_constraint(self, item, column):
-
-        sketch_name = item.data(0, QtCore.Qt.UserRole + 1)
-        constraint_index = item.data(0, QtCore.Qt.UserRole + 2)
-
-        if sketch_name is None or constraint_index is None:
+        ref = item.data(0, QtCore.Qt.UserRole)
+        if not ref:  # lignes de section "Utilise" / "Utilisé par"
             return
+        if column == self.EXPRESSION_COLUMN:
+            # les termes de l'expression = ce que la ligne utilise
+            self.open_refs(sorted(self.graph.get(ref, {}).get("parents", ())))
+        else:
+            self.open_refs([ref])
 
+    # --------------------------------------------------------
+    # Ouvre / sélectionne des références du graphe (ex : 'Spreadsheet.D3', 'Pad.Length',
+    # 'Sketch.Constraints[2]') : cellules dans leur tableur, contrainte dans son sketch,
+    # sinon propriétés dans l'arbre FreeCAD
+    # --------------------------------------------------------
+    def open_refs(self, refs):
+        doc = App.ActiveDocument
+        cells, constraints, properties = [], [], []
+        for ref in refs:
+            obj_name, _, path = ref.partition(".")
+            obj = doc.getObject(obj_name)
+            if obj is None or not path:
+                continue
+            if obj.TypeId == "Spreadsheet::Sheet":
+                cells.append(ref)
+                continue
+            idx = constraint_index({"kind": "property", "object": obj_name, "property": path})
+            if idx is not None:
+                constraints.append((obj_name, idx))
+            else:
+                properties.append((obj, path))
+
+        if cells:
+            self.select_cells(cells)
+        if constraints:
+            self.open_constraint(*constraints[0])
+        elif properties:
+            self.select_properties(properties)
+
+    # --------------------------------------------------------
+    # Ouvre le sketch en mode édition, contrainte sélectionnée
+    # --------------------------------------------------------
+    def open_constraint(self, sketch_name, constraint_index):
         doc = App.ActiveDocument
         sketch = doc.getObject(sketch_name)
 
@@ -1747,6 +2044,53 @@ class RefDialog2(QtGui.QDialog):
 
         # Mettre la vue 3D (sketch en édition) au premier plan, pour que l'utilisateur la voie
         self.show3DView(doc)
+
+    # ---------------------------------------------------------
+    # Sélectionne des propriétés (liste de (objet, chemin)) : les objets dans l'arbre
+    # FreeCAD, et s'il n'y en a qu'un, la propriété dans la fenêtre des propriétés,
+    # prête à être modifiée
+    # ---------------------------------------------------------
+    def select_properties(self, properties):
+        doc = App.ActiveDocument
+        Gui.Selection.clearSelection()
+        for obj, _ in properties:
+            Gui.Selection.addSelection(doc.Name, obj.Name)
+        if len({obj.Name for obj, _ in properties}) == 1:
+            path = properties[0][1]  # ex 'AttachmentOffset.Base.z' : jusqu'à la ligne z
+            # la fenêtre des propriétés se met à jour un peu après la sélection
+            QtCore.QTimer.singleShot(300, lambda: select_property_row(path))
+
+    # ---------------------------------------------------------
+    # Sélectionne des cellules (ex : ['Spreadsheet.A3', 'Spreadsheet.D5']) dans la
+    # fenêtre de leur tableur, ouverte si besoin
+    # ---------------------------------------------------------
+    def select_cells(self, cell_refs):
+        def selection_flag(name):  # PySide6 : enum sans conversion directe en int
+            flag = getattr(QtCore.QItemSelectionModel, name)
+            try:
+                return int(flag)
+            except TypeError:
+                return flag.value
+
+        by_sheet = {}
+        for ref in cell_refs:
+            sheet_name, _, addr = ref.partition(".")
+            by_sheet.setdefault(sheet_name, []).append(addr)
+
+        for sheet_name, addrs in by_sheet.items():
+            sheet = App.ActiveDocument.getObject(sheet_name)
+            if sheet is None:
+                continue
+            try:
+                sheet.ViewObject.doubleClicked()  # ouvre la fenêtre du tableur, ou la met devant
+                view = sheet.ViewObject.getView()
+                # cellule courante d'abord : setCurrentIndex peut remplacer la sélection
+                view.setCurrentIndex(addrs[0])
+                view.select(addrs[0], selection_flag("ClearAndSelect"))
+                for addr in addrs[1:]:
+                    view.select(addr, selection_flag("Select"))
+            except Exception as e:  # volontaire : la sélection des cellules n'est qu'une aide
+                print("Cellules non sélectionnées :", sheet_name, addrs, e)
 
     # ---------------------------------------------------------
     # Vérifie si un sketch est en mode édition
@@ -2070,13 +2414,38 @@ class RefDialog2(QtGui.QDialog):
 # ------------------------------------------------------------
 # Programme principal
 # ------------------------------------------------------------
+def property_view_has_focus():
+    tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
+    focus = QtGui.QApplication.focusWidget()
+    return tree is not None and focus is not None and (focus is tree or tree.isAncestorOf(focus))
+
+
 try:
     view = Gui.ActiveDocument.ActiveView
     sheet = view.getSheet()
 except:
     sheet = None
 
-if sheet is None:
+# Départ depuis une propriété : le focus est dans la fenêtre des propriétés,
+# ou la fenêtre active n'est pas un tableur (ex : vue 3D)
+root_property = None
+if Gui.ActiveDocument is not None and (sheet is None or property_view_has_focus()):
+    selected_property = selectedPropertyInPropertyView()
+    if selected_property is not None:
+        root_property = selected_property.obj.Name + "." + selected_property.path
+
+if root_property is not None:
+    dlg = RefDialog2(sheet, root_property)
+    if root_property in dlg.graph:
+        QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
+        dlg.show()
+    else:
+        QtGui.QMessageBox.information(
+            None,
+            tr("no_selection_title"),
+            tr("property_no_dependency").format(prop=dlg.title_target())
+        )
+elif sheet is None:
     QtGui.QMessageBox.warning(
         None,
         tr("error_title"),
