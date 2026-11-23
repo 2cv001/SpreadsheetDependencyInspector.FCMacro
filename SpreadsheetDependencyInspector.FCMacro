@@ -89,8 +89,7 @@ TRANSLATIONS = {
         "filter_others": "Autres",
         "show_names": "Noms",
         "show_labels_alias": "Label/alias",
-        "show_constraint_types": "Type",
-        "lines_shown": "Lignes",
+        "show_constraint_types": "Type",        "lines_shown": "Lignes",
         "hint_open_sketch": "Double clic sur une ligne de contrainte pour ouvrir l’esquisse, contrainte sélectionnée."
             "Simple clic pour éditer un lLbel/Alias ou une expression",
 
@@ -117,7 +116,10 @@ TRANSLATIONS = {
         "error_title": "Erreur",
         "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet.",
         "sketch_not_open_title": "Sketch non ouvert",
-        "sketch_not_open_msg": "Ouvrez d'abord le sketch en mode édition. Double‑clic dans l’arborescence FreeCAD sur\n ",
+        "sketch_not_open_msg": "Impossible d'ouvrir le sketch en mode édition : aucune vue 3D n'est ouverte "
+                               "pour ce document, et la macro n'a pas pu en ouvrir une."
+                               "\nOuvrez une vue 3D du document, puis double-cliquez à nouveau sur la contrainte."
+                               "\n\nSketch : ",
         "hint_constraint":
             "Double clic sur la ligne de la contrainte pour ouvrir le sketch, "
             " voir et sélectionner la contrainte",
@@ -160,8 +162,7 @@ TRANSLATIONS = {
         "filter_others": "Others",
         "show_names": "Names",
         "show_labels_alias": "label/alias",
-        "show_constraint_types": "type",
-        "middle_group": "Columns",
+        "show_constraint_types": "type",        "middle_group": "Columns",
         "hint_open_sketch": "Double‑click a constraint row to open the sketch with the constraint selected."
             " Simple click to edit a Label/Alias or an expression.",
 
@@ -188,7 +189,10 @@ TRANSLATIONS = {
         "error_title": "Error",
         "error_select_cells": "Select cells in a Spreadsheet.",
         "sketch_not_open_title": "Sketch not open",
-        "sketch_not_open_msg": "First open the sketch in edit mode. Double‑click in the in the model tree on\n ",
+        "sketch_not_open_msg": "Unable to open the sketch in edit mode: no 3D view is open for this document, "
+                               "and the macro could not open one."
+                               "\nOpen a 3D view of the document, then double-click the constraint again."
+                               "\n\nSketch: ",
         "hint_constraint": "Double‑click the constraint’s row to open the sketch, view the constraint, and select it.",
         "spreadsheet_not_active": "The Spreadsheet must be the active window.",
         "no_selection_title": "No selection",
@@ -299,6 +303,26 @@ def extract_raw_refs_for_graph(formula, sheet_name, alias_map):
     return refs
 
 
+def constraint_index(node):
+    """
+    Index de la contrainte d'esquisse d'un nœud propriété, ou None.
+    Accepte 'Constraints[3]' et les contraintes nommées 'Constraints.largeur'.
+    """
+    prop = node.get("property") or ""
+    if node.get("kind") != "property" or not prop.startswith("Constraints"):
+        return None
+    match = re.fullmatch(r"Constraints\[(\d+)\]", prop)
+    if match:
+        return int(match.group(1))
+    if prop.startswith("Constraints."):
+        name = prop[len("Constraints."):]
+        sketch = App.ActiveDocument.getObject(node.get("object") or "")
+        for i, constraint in enumerate(getattr(sketch, "Constraints", None) or []):
+            if constraint.Name == name:
+                return i
+    return None
+
+
 def openSketchInEditMode(sketch):
     """
     Ouvre un sketch en mode édition.
@@ -310,8 +334,15 @@ def openSketchInEditMode(sketch):
     if sketch is None:
         return False
 
-    # Vérifier si une vue 3D existe réellement dans le document
+    # Une vue 3D est nécessaire pour le mode édition : en ouvrir une s'il n'y en a pas
+    # (cas où seul le tableur est ouvert)
     views3d = Gui.ActiveDocument.mdiViewsOfType("Gui::View3DInventor")
+    if not views3d:
+        try:
+            Gui.runCommand("Std_ViewCreate", 0)
+        except Exception:  # volontaire : commande absente ou impossible
+            pass
+        views3d = Gui.ActiveDocument.mdiViewsOfType("Gui::View3DInventor")
     if not views3d:
         return False
 
@@ -451,6 +482,26 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
                 graph[norm]["children"].add(cell_ref)
 
 
+# ===============================================================================
+# getPropertyValue() is shared with Sketch_Constraint_From_Spreadsheet.FCMacro
+# (https://github.com/2cv001/FreeCAD-macros) : keep it identical in both macros.
+# ===============================================================================
+def getPropertyValue(obj, path):
+    # path : as in obj.ExpressionEngine, ex 'Length', '.Placement.Base.x',
+    #        'Constraints[3]' or 'Constraints.myName' (a sketch constraint object is returned)
+    # raise an exception (AttributeError, IndexError...) if the path does not exist
+    value = obj
+    for part in path.lstrip(".").split("."):
+        match = re.fullmatch(r"(\w+)\[(\d+)\]", part)
+        if match:  # ex Constraints[3]
+            value = getattr(value, match.group(1))[int(match.group(2))]
+        elif isinstance(value, (list, tuple)):  # ex Constraints.myName
+            value = next(v for v in value if getattr(v, "Name", None) == part)
+        else:
+            value = getattr(value, part)
+    return value
+
+
 def traiter_objet(obj, graph, label_to_name, alias_map):
 
     if not hasattr(obj, "ExpressionEngine"):
@@ -492,30 +543,15 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
         graph[ref_obj]["label"] = obj.Label
 
         # --- 4) Valeur et type de contrainte ---
-        value = None
+        try:
+            value = getPropertyValue(obj, prop)
+        except Exception:  # volontaire : propriété supprimée, renommée, contrainte absente...
+            value = None
         ctype = None
-
-        if prop.startswith("Constraints["):
-            try:
-                idx = int(prop[len("Constraints["):-1])
-                constraint = obj.Constraints[idx]
-                value = constraint.Value
-                ctype = constraint.Type
-            except:
-                value = None
-                ctype = None
-        else:
-            try:
-                if "." in prop:
-                    parts = prop.split(".")
-                    attr = obj
-                    for p in parts:
-                        attr = getattr(attr, p)
-                    value = attr
-                else:
-                    value = getattr(obj, prop)
-            except:
-                value = None
+        # contrainte d'esquisse (Constraints[3] ou Constraints.nom) : sa valeur et son type
+        if prop.startswith("Constraints") and hasattr(value, "Type") and hasattr(value, "Value"):
+            ctype = value.Type
+            value = value.Value
 
         graph[ref_obj]["value"] = value
         graph[ref_obj]["constraint_type"] = ctype
@@ -1039,7 +1075,6 @@ class RefDialog2(QtGui.QDialog):
         self.show_value.setChecked(ui.getboolean("show_value", False))
         self.show_labels_alias.setChecked(ui.getboolean("show_labels_alias", False))
         self.show_constraint_types.setChecked(ui.getboolean("show_constraint_types", False))
-
         # --- Taille ---
         w = ui.getint("width", 600)
         h = ui.getint("height", 400)
@@ -1122,7 +1157,6 @@ class RefDialog2(QtGui.QDialog):
         config["UI"]["show_value"] = str(self.show_value.isChecked())
         config["UI"]["show_labels_alias"] = str(self.show_labels_alias.isChecked())
         config["UI"]["show_constraint_types"] = str(self.show_constraint_types.isChecked())
-
         # --- Taille ---
         size = self.size()
         config["UI"]["width"] = str(size.width())
@@ -1426,14 +1460,11 @@ class RefDialog2(QtGui.QDialog):
             for col in range(self.tree.columnCount()):
                 item.setToolTip(col, tooltip)
 
-            # --- Données internes pour clic droit ---
-            if node["kind"] == "property" and node["property"].startswith("Constraints["):
-                try:
-                    idx = int(node["property"][len("Constraints["):-1])
-                    item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
-                    item.setData(0, QtCore.Qt.UserRole + 2, idx)
-                except:
-                    pass
+            # --- Données internes pour le double clic (ouvrir le sketch sur la contrainte) ---
+            idx = constraint_index(node)
+            if idx is not None:
+                item.setData(0, QtCore.Qt.UserRole + 1, node["object"])
+                item.setData(0, QtCore.Qt.UserRole + 2, idx)
 
             # --- Récursion ---
             recursive_func(item, child_ref, reachable, root_ref)
@@ -1714,8 +1745,8 @@ class RefDialog2(QtGui.QDialog):
             f"{sketch_name}.Constraint{constraint_index + 1}"
         )
 
-        # Redonner le focus au Spreadsheet
-        self.restoreSpreadsheetFocus()
+        # Mettre la vue 3D (sketch en édition) au premier plan, pour que l'utilisateur la voie
+        self.show3DView(doc)
 
     # ---------------------------------------------------------
     # Vérifie si un sketch est en mode édition
@@ -1725,14 +1756,20 @@ class RefDialog2(QtGui.QDialog):
         return vp is not None and hasattr(vp, "Object") and vp.Object == sketch
 
     # ---------------------------------------------------------
-    # Redonne le focus au Spreadsheet actif
+    # Met au premier plan la vue 3D du document (celle du sketch en édition)
     # ---------------------------------------------------------
-    def restoreSpreadsheetFocus(self):
-        mw = Gui.getMainWindow()
-        for w in mw.findChildren(QtGui.QWidget):
-            if w.metaObject().className() == "SpreadsheetGui::SheetView":
-                w.setFocus()
-                return
+    def show3DView(self, doc):
+        mdiArea = Gui.getMainWindow().findChild(QtGui.QMdiArea)
+        if mdiArea is None:
+            return
+        views3d = [w for w in mdiArea.subWindowList()
+                   if w.widget() is not None
+                   and w.widget().metaObject().className() == "Gui::View3DInventor"]
+        # de préférence une vue 3D de ce document (son nom figure dans le titre de la fenêtre)
+        ofThisDoc = [w for w in views3d if doc.Label in w.windowTitle()]
+        windows = ofThisDoc or views3d
+        if windows:
+            mdiArea.setActiveSubWindow(windows[0])
 
     def on_change_coche(self, checked):
         self.recompute()
