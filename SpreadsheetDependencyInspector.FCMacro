@@ -20,6 +20,7 @@ __License__ = "Apache-2.0"
 
 import xml.etree.ElementTree as ET
 import re
+import math
 from collections import namedtuple
 import os
 from PySide import QtGui, QtCore
@@ -97,6 +98,11 @@ TRANSLATIONS = {
 
         # Sections arbre
         "uses": "Utilise",
+        "error_inherited": "Erreur venant de : {refs}",
+        "value_not_applied": "Valeur non appliquée : l'expression donne {expected}, "
+                             "la propriété vaut {value} (refusée, ou document à recalculer)",
+        "object_invalid_state": "Objet en erreur : {status}",
+        "constraint_conflict": "Contrainte refusée par le solveur ({kind}) : {status}",
         "used_by": "Est utilisé par",
         "content_of": "Contenu de",
         "expression_of": "Expression de",
@@ -174,6 +180,11 @@ TRANSLATIONS = {
 
         # Sections arbre
         "uses": "Uses",
+        "error_inherited": "Error coming from: {refs}",
+        "value_not_applied": "Value not applied: the expression gives {expected}, "
+                             "the property is {value} (refused, or document to recompute)",
+        "object_invalid_state": "Object in error: {status}",
+        "constraint_conflict": "Constraint refused by the solver ({kind}): {status}",
         "used_by": "Used by",
         "content_of": "Content of",
         "expression_of": "Expression of",
@@ -473,10 +484,18 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
         if graph[cell_ref]["label"] is None or graph[cell_ref]["label"] == graph[cell_ref]["cell"]:
             graph[cell_ref]["label"] = alias if alias else addr
 
-        graph[cell_ref]["value"] = sheet.get(addr)
+        try:
+            graph[cell_ref]["value"] = sheet.get(addr)
+        except Exception as e:  # volontaire : cellule illisible = en erreur
+            graph[cell_ref]["errors"].add(str(e))
 
         if content.startswith("#"):
             graph[cell_ref]["errors"].add(content)
+        elif content.startswith("="):
+            # FreeCAD met "ERR: message" comme valeur d'une cellule en erreur
+            message = error_message(graph[cell_ref]["value"])
+            if message:
+                graph[cell_ref]["errors"].add(message)
 
         # --- DÉPENDANCES ---
         if content.startswith("="):
@@ -756,6 +775,24 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
         graph[ref_obj]["value"] = value
         graph[ref_obj]["constraint_type"] = ctype
 
+        # --- 4b) Expression en erreur : FreeCAD ne l'applique pas, la propriété
+        #         garde son ancienne valeur ---
+        if hasattr(obj, "evalExpression"):
+            expected = None
+            try:
+                expected = obj.evalExpression(expr)
+                message = error_message(expected)
+            except Exception as e:  # volontaire : référence inconnue, syntaxe...
+                message = str(e)
+            # valeur refusée (solveur, valeur interdite...) : la propriété ne vaut
+            # pas ce que donne l'expression
+            # (sauf l'axe d'une rotation : FreeCAD le ramène à une longueur de 1,
+            #  ex x = 10 devient 0.99995, et la fenêtre des propriétés affiche 10)
+            if not message and "Rotation.Axis" not in prop and not same_number(expected, value):
+                message = tr("value_not_applied").format(expected=expected, value=value)
+            if message:
+                graph[ref_obj]["errors"].add(message)
+
         # --- 5) DÉPENDANCES ---
         parents_bruts = extract_raw_refs_for_graph(expr, None, alias_map)
 
@@ -797,6 +834,67 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
                                             graph[p2_norm]["children"].add(ref_prop)
 
 
+def error_message(value):
+    # 'ERR: msg' (valeur d'une cellule en erreur, répétée quand l'erreur vient
+    # d'une autre cellule) -> 'msg' ; None si value n'est pas une erreur
+    if not isinstance(value, str) or not value.startswith("ERR:"):
+        return None
+    return next((m.strip() for m in value.split("ERR:") if m.strip()), value)
+
+
+def same_number(expected, value):
+    # True si les deux valeurs sont égales, ou si on ne sait pas les comparer
+    # (Placement, texte...). Quantity : valeur en unités de base (mm, °) ;
+    # les angles des contraintes et des rotations sont en radians : accepter les deux.
+    def number(v):
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        if hasattr(v, "Value") and isinstance(v.Value, (int, float)):
+            return float(v.Value)
+        return None
+
+    a, b = number(expected), number(value)
+    if a is None or b is None:
+        return True
+    # tolérance : le solveur et les calculs en flottants donnent 9.9999999 au lieu de 10
+    return any(math.isclose(x, b, rel_tol=1e-5, abs_tol=1e-4) for x in (a, math.radians(a)))
+
+
+def mark_errors(graph):
+    # Erreurs propagées : une cellule ou propriété est en erreur si elle a sa
+    # propre erreur, ou si elle utilise une cellule / propriété en erreur.
+    # node["error_origins"] : les refs d'où vient l'erreur ([ref] si elle en est l'origine)
+    def origins(ref, visiting):
+        node = graph[ref]
+        if "error_origins" in node:
+            return node["error_origins"]
+        if ref in visiting:  # boucle de références
+            return set()
+        visiting.add(ref)
+        found = set()
+        for parent in node["parents"]:
+            if parent in graph:
+                found |= origins(parent, visiting)
+        visiting.discard(ref)
+        if node["errors"] and not found and node.get("upstream_errors"):
+            found = set(node["upstream_errors"])  # erreur venant d'un objet en amont
+        elif node["errors"] and not found:
+            found = {ref}  # la ref est l'origine de l'erreur
+        elif node["errors"] or (found and node["kind"] == "cell"):
+            pass  # erreur héritée
+        elif found:
+            # propriété sans erreur propre utilisant une ref en erreur : FreeCAD n'a
+            # pas vu d'erreur, elle garde une valeur qui n'est peut-être plus à jour
+            found = set()
+        node["error_origins"] = found
+        return found
+
+    for ref in graph:
+        origins(ref, set())
+
+
 def build_graph():
     graph = {}
 
@@ -818,6 +916,50 @@ def build_graph():
     for obj in doc.Objects:
         if obj.TypeId == "Spreadsheet::Sheet":
             traiter_feuille(obj, graph, label_to_name, alias_map)
+
+    # 4) Objets en erreur (sketch non résolu, pad impossible...)
+    for obj in doc.Objects:
+        if "Invalid" not in getattr(obj, "State", ()) or not hasattr(obj, "ExpressionEngine"):
+            continue
+        refs = [obj.Name + "." + prop.lstrip(".") for prop, _ in obj.ExpressionEngine]
+        refs = [r for r in refs if r in graph]
+        try:
+            status = " ".join(obj.getStatusString().split())
+        except Exception:  # volontaire : message seulement
+            status = "Invalid"
+
+        # 4a) Sketch : le solveur donne les contraintes en cause (numéros à partir de 1)
+        found = False
+        for attr, kind in (("ConflictingConstraints", "conflict"),
+                           ("RedundantConstraints", "redundant"),
+                           ("MalformedConstraints", "malformed")):
+            for number in getattr(obj, attr, None) or ():
+                for r in refs:
+                    if constraint_index(graph[r]) == number - 1:
+                        graph[r]["errors"].add(
+                            tr("constraint_conflict").format(kind=kind, status=status))
+                        found = True
+
+        # 4b) Sinon, si aucune de ses propriétés n'est repérée, elles sont toutes suspectes
+        if not found and not any(graph[r]["errors"] for r in refs):
+            for r in refs:
+                graph[r]["errors"].add(tr("object_invalid_state").format(status=status))
+
+    # 4c) Objet en aval d'un objet en erreur (ex : Pad d'un Sketch non résolu) : son
+    #     erreur vient de cet objet, pas de ses propres propriétés
+    error_objects = {n["object"] for n in graph.values() if n["errors"] and n["kind"] == "property"}
+    error_objects |= {o.Name for o in doc.Objects if "Invalid" in getattr(o, "State", ())
+                      and o.TypeId != "Spreadsheet::Sheet"}
+    for node in graph.values():
+        if node["errors"] and node["kind"] == "property":
+            obj = doc.getObject(node["object"])
+            upstream = getattr(obj, "OutListRecursive", ()) if obj else ()
+            node["upstream_errors"] = sorted(
+                o.Name for o in upstream
+                if o.Name in error_objects and o.TypeId != "Spreadsheet::Sheet")
+
+    # 5) Erreurs : origine et propagation
+    mark_errors(graph)
 
     return graph
 
@@ -1181,6 +1323,14 @@ class RefDialog2(QtGui.QDialog):
         # de celle qui a changé depuis (propriété ou cellules)
         self._seen_property = current_selected_property()
         self._seen_cells = current_selected_cells()
+
+        # Où l'utilisateur a cliqué en dernier hors de cette fenêtre ("property" ou
+        # "cells"), relevé toutes les 300 ms : un simple relevé, qui n'intervient pas
+        # dans les clics (un suivi par le signal focusChanged cassait le double clic)
+        self._last_source = None
+        self._focus_timer = QtCore.QTimer(self)
+        self._focus_timer.timeout.connect(self.poll_focus)
+        self._focus_timer.start(300)
         self.btn_expand_all.clicked.connect(self.expand_all)
         self.btn_collapse_all.clicked.connect(self.collapse_all)
         self.level_spin.valueChanged.connect(self.set_expand_level)
@@ -1433,6 +1583,7 @@ class RefDialog2(QtGui.QDialog):
             config.write(f)
 
     def closeEvent(self, event):
+        self._focus_timer.stop()
         self.save_settings()
         super().closeEvent(event)
 
@@ -1450,11 +1601,26 @@ class RefDialog2(QtGui.QDialog):
     # Bouton Relancer : repartir de la sélection qui a changé depuis le
     # dernier lancement (propriété dans la fenêtre des propriétés, ou cellules)
     # --------------------------------------------------------
+    def poll_focus(self):
+        focus = QtGui.QApplication.focusWidget()
+        if focus is None or focus is self or self.isAncestorOf(focus):
+            return
+        tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
+        if tree is not None and (focus is tree or tree.isAncestorOf(focus)):
+            self._last_source = "property"
+        elif current_selected_cells() is not None:  # fenêtre active = un tableur
+            self._last_source = "cells"
+
     def on_refresh(self):
         prop = current_selected_property()
         cells = current_selected_cells()
         prop_changed = prop is not None and prop != self._seen_property
         cells_changed = cells is not None and cells != self._seen_cells
+        # dernier clic connu : il l'emporte sur les changements de sélection
+        if self._last_source == "property" and prop is not None:
+            prop_changed, cells_changed = True, False
+        elif self._last_source == "cells" and cells is not None:
+            prop_changed, cells_changed = False, True
         if prop_changed and cells_changed:
             prop_changed = False  # les deux ont changé : le tableur actif l'emporte
         if prop_changed:
@@ -1740,6 +1906,7 @@ class RefDialog2(QtGui.QDialog):
 
             item = QtGui.QTreeWidgetItem(parent_item, cols)
             item.setData(0, QtCore.Qt.UserRole, child_ref)
+            self.style_error(item, child_ref)
 
             # Rendre l’item éditable (les colonnes interdites sont bloquées par le délégué)
             item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
@@ -1765,6 +1932,21 @@ class RefDialog2(QtGui.QDialog):
             relation_key="children",
             recursive_func=self.add_out_recursive
         )
+
+    # --------------------------------------------------------
+    # Ligne en rouge si en erreur, en gras si elle est l'origine de l'erreur
+    # --------------------------------------------------------
+    def style_error(self, item, ref):
+        origins = self.graph[ref].get("error_origins")
+        if not origins:
+            return
+        brush = QtGui.QBrush(QtGui.QColor(220, 40, 40))
+        for col in range(self.tree.columnCount()):
+            item.setForeground(col, brush)
+            if ref in origins:
+                font = item.font(col)
+                font.setBold(True)
+                item.setFont(col, font)
 
     def build_tooltip(self, ref):
         node = self.graph[ref]
@@ -1814,6 +1996,9 @@ class RefDialog2(QtGui.QDialog):
         if node.get("errors"):
             for err in node["errors"]:
                 lines.append(f"Error : {err}")
+        origins = node.get("error_origins") or set()
+        if origins and origins != {ref}:
+            lines.append(tr("error_inherited").format(refs=", ".join(sorted(origins))))
 
         return "\n".join(lines)
 
@@ -1871,6 +2056,7 @@ class RefDialog2(QtGui.QDialog):
             cols_root = self.enrich_columns(root, self.graph[root])
             root_item = QtGui.QTreeWidgetItem(self.tree, cols_root)
             root_item.setData(0, QtCore.Qt.UserRole, root)
+            self.style_error(root_item, root)
 
             # --- Rendre éditables les colonnes 1 et 3 ---
             # Rendre éditables uniquement les colonnes 1 (Alias) et 3 (Formule)
