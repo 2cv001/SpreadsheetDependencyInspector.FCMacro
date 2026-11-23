@@ -1175,7 +1175,12 @@ class RefDialog2(QtGui.QDialog):
         # ============================================================
         #  Connexions
         # ============================================================
-        self.btn_refresh.clicked.connect(self.recompute)
+        self.btn_refresh.clicked.connect(self.on_refresh)
+
+        # Sélections vues au dernier lancement : le bouton Relancer repart
+        # de celle qui a changé depuis (propriété ou cellules)
+        self._seen_property = current_selected_property()
+        self._seen_cells = current_selected_cells()
         self.btn_expand_all.clicked.connect(self.expand_all)
         self.btn_collapse_all.clicked.connect(self.collapse_all)
         self.level_spin.valueChanged.connect(self.set_expand_level)
@@ -1442,6 +1447,24 @@ class RefDialog2(QtGui.QDialog):
         self.tree.setColumnHidden(4, not self.show_constraint_types.isChecked()) # Type
 
     # --------------------------------------------------------
+    # Bouton Relancer : repartir de la sélection qui a changé depuis le
+    # dernier lancement (propriété dans la fenêtre des propriétés, ou cellules)
+    # --------------------------------------------------------
+    def on_refresh(self):
+        prop = current_selected_property()
+        cells = current_selected_cells()
+        prop_changed = prop is not None and prop != self._seen_property
+        cells_changed = cells is not None and cells != self._seen_cells
+        if prop_changed and cells_changed:
+            prop_changed = False  # les deux ont changé : le tableur actif l'emporte
+        if prop_changed:
+            self.root_property = prop
+        elif cells_changed:
+            self.root_property = None
+        self._seen_property, self._seen_cells = prop, cells
+        self.recompute()
+
+    # --------------------------------------------------------
     # RECOMPUTE
     def recompute(self):
 
@@ -1504,7 +1527,7 @@ class RefDialog2(QtGui.QDialog):
             obj_name, _, path = self.root_property.partition(".")
             obj = App.ActiveDocument.getObject(obj_name)
             return (obj.Label if obj else obj_name) + "." + path
-        return self.sheet.Label
+        return self.sheet.Label if self.sheet is not None else ""
 
     # --------------------------------------------------------
     # Point de départ = la propriété choisie au lancement
@@ -1523,7 +1546,7 @@ class RefDialog2(QtGui.QDialog):
         current_view = Gui.ActiveDocument.ActiveView
 
         # Si on est dans la vue 3D → ouvrir la feuille
-        if type(current_view).__name__ == "View3DInventorPy":
+        if type(current_view).__name__ == "View3DInventorPy" and self.sheet is not None:
             self.sheet.ViewObject.doubleClicked()
             print('focus changé')
 
@@ -1551,6 +1574,10 @@ class RefDialog2(QtGui.QDialog):
         if new_sheet and new_sheet != self.sheet:
             self.sheet = new_sheet
             self.graph = build_graph()
+
+        if self.sheet is None:  # lancé depuis une propriété, sans tableur ouvert
+            self.tree.clear()
+            return []
 
         # 2) Mise à jour du titre
         self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
@@ -2409,6 +2436,29 @@ class RefDialog2(QtGui.QDialog):
             self._editing = False
             self._old_value = None
             self._old_column = None
+
+
+# ------------------------------------------------------------
+# Sélections courantes (pour le bouton Relancer)
+# ------------------------------------------------------------
+def current_selected_property():
+    # ex 'Pad.Length', ou None si aucune propriété n'est sélectionnée
+    try:
+        selected = selectedPropertyInPropertyView()
+    except Exception:  # volontaire : simple aide au choix du point de départ
+        return None
+    return None if selected is None else selected.obj.Name + "." + selected.path
+
+
+def current_selected_cells():
+    # ex ('Spreadsheet', ('A1', 'B2')), ou None si la fenêtre active n'est pas un tableur
+    try:
+        view = Gui.ActiveDocument.ActiveView
+        sheet = view.getSheet()
+        cells = sheet.ViewObject.getView().selectedCells()
+    except Exception:  # volontaire : vue 3D, pas de document...
+        return None
+    return (sheet.Name, tuple(str(c) for c in cells))
 
 
 # ------------------------------------------------------------
