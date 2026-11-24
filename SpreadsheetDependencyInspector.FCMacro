@@ -9,7 +9,7 @@
 
 __Title__ = "Spreadsheet_Dependency_Inspector"
 __Author__ = "2cv001"
-__Date__ = "2026/11/24 09:44"  # YYYY/MM/DD
+__Date__ = "2026/11/24 09:58"  # YYYY/MM/DD
 __Version__ = __Date__
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -108,10 +108,10 @@ TRANSLATIONS = {
         "value_not_number": "L'expression donne le texte {expected}, la propriété attend un nombre",
         "error_cause": "Cause de l'erreur de {ref} : contient le texte {value}, là où un nombre "
                        "est attendu.\n{name} n'est pas en erreur elle-même : elle n'est en orange "
-                       "que sous {ref}.",
+                       "qu'à côté de {ref}.",
         "error_suspect": "Utilisée par {ref}, qui est en erreur : valeur à vérifier.\n"
                          "{name} n'est pas en erreur elle-même : elle n'est en orange italique "
-                         "que sous {ref}.",
+                         "qu'à côté de {ref}.",
         "constraint_conflict": "Contrainte refusée par le solveur ({kind}) : {status}",
         "used_by": "Est utilisé par",
         "content_of": "Contenu de",
@@ -215,9 +215,9 @@ TRANSLATIONS = {
         "object_invalid_state": "Object in error: {status}",
         "value_not_number": "The expression gives the text {expected}, the property expects a number",
         "error_cause": "Cause of the error of {ref}: contains the text {value}, where a number "
-                       "is expected.\n{name} is not in error itself: it is orange only under {ref}.",
+                       "is expected.\n{name} is not in error itself: it is orange only next to {ref}.",
         "error_suspect": "Used by {ref}, which is in error: value to check.\n"
-                         "{name} is not in error itself: it is orange italic only under {ref}.",
+                         "{name} is not in error itself: it is orange italic only next to {ref}.",
         "constraint_conflict": "Constraint refused by the solver ({kind}): {status}",
         "used_by": "Used by",
         "content_of": "Content of",
@@ -2048,20 +2048,7 @@ class RefDialog2(QtGui.QDialog):
                 if not (link and self.filter_errors.isChecked()):
                     continue
 
-            node = self.graph[child_ref]
-            cols = self.enrich_columns(child_ref, node)
-
-            item = QtGui.QTreeWidgetItem(parent_item, cols)
-            item.setData(0, QtCore.Qt.UserRole, child_ref)
-            self.style_error(item, child_ref)
-
-            # Rendre l’item éditable (les colonnes interdites sont bloquées par le délégué)
-            item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
-
-            # --- Nouveau tooltip centralisé ---
-            tooltip = self.build_tooltip(child_ref)
-            for col in range(self.tree.columnCount()):
-                item.setToolTip(col, tooltip)
+            item = self.add_item(parent_item, child_ref)
 
             # --- Orange : cause (ou suspect, en italique) d'une erreur sans être en
             #     erreur (voir build_graph 6) ---
@@ -2081,6 +2068,22 @@ class RefDialog2(QtGui.QDialog):
 
             # --- Récursion ---
             recursive_func(item, child_ref, reachable, root_ref)
+
+    # --------------------------------------------------------
+    # Ligne de ref sous parent_item : colonnes, couleur d'erreur, infobulle
+    # --------------------------------------------------------
+    def add_item(self, parent_item, ref):
+        item = QtGui.QTreeWidgetItem(parent_item, self.enrich_columns(ref, self.graph[ref]))
+        item.setData(0, QtCore.Qt.UserRole, ref)
+        self.style_error(item, ref)
+
+        # Rendre l’item éditable (les colonnes interdites sont bloquées par le délégué)
+        item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
+
+        tooltip = self.build_tooltip(ref)
+        for col in range(self.tree.columnCount()):
+            item.setToolTip(col, tooltip)
+        return item
 
     def add_in_recursive(self, parent_item, ref, reachable, root_ref):
         self.add_recursive_common(
@@ -2224,6 +2227,15 @@ class RefDialog2(QtGui.QDialog):
                         root_visible = True
                         break
 
+            # 2c) Erreurs cochée : la racine est la cause (ou à vérifier) d'une ligne
+            #     en erreur qui l'utilise (voir build_graph 6)
+            linked_errors = []
+            if self.filter_errors.isChecked():
+                linked_errors = [c for c in sorted(self.graph[root]["children"])
+                                 if c in self.graph and error_link(self.graph, c, root)]
+            if linked_errors:
+                root_visible = True
+
             if not root_visible:
                 return
 
@@ -2260,6 +2272,18 @@ class RefDialog2(QtGui.QDialog):
                 if in_item.childCount() == 0:
                     root_item.removeChild(in_item)
 
+            # 4b) Utilise décochée, Erreurs cochée : une ligne à l'origine de son erreur
+            #     garde sous elle ses valeurs en orange (cause) et orange italique
+            #     (à vérifier), seulement elles (voir build_graph 6)
+            elif self.filter_errors.isChecked():
+                linked = (self.graph[root].get("error_causes", set())
+                          | self.graph[root].get("error_suspects", set()))
+                if linked:
+                    in_item = QtGui.QTreeWidgetItem(root_item, [tr("uses"), "", "", "", ""])
+                    for used in sorted(linked):
+                        item = self.add_item(in_item, used)
+                        self.mark_cause(item, used, root, error_link(self.graph, root, used))
+
             # ------------------------------------------------------------
             # 5) Section OUT (Used by)
             # ------------------------------------------------------------
@@ -2269,6 +2293,15 @@ class RefDialog2(QtGui.QDialog):
 
                 if out_item.childCount() == 0:
                     root_item.removeChild(out_item)
+
+            # 5b) Est utilisé par décochée, Erreurs cochée : la racine (en orange) garde
+            #     sous elle les lignes en erreur dont elle est la cause, seulement elles
+            elif linked_errors:
+                out_item = QtGui.QTreeWidgetItem(root_item, [tr("used_by"), "", "", "", ""])
+                for error_ref in linked_errors:
+                    self.add_item(out_item, error_ref)
+                    self.mark_cause(root_item, root, error_ref,
+                                    error_link(self.graph, error_ref, root))
 
         finally:
             # ------------------------------------------------------------
