@@ -9,7 +9,7 @@
 
 __Title__ = "Spreadsheet_Dependency_Inspector"
 __Author__ = "2cv001"
-__Date__ = "2026/11/24 08:29"  # YYYY/MM/DD
+__Date__ = "2026/11/24 09:44"  # YYYY/MM/DD
 __Version__ = __Date__
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -35,7 +35,7 @@ MACRO_DIR = os.path.dirname(os.path.abspath(__file__))
 INI_PATH = os.path.join(MACRO_DIR, INI_FILENAME)
 # Niveau utilisé par le bouton "Tout replier"
 DEFAULT_COLLAPSE_LEVEL = 1
-# Niveau initial au lancement de la macro
+# Niveau du compteur avant le premier affichage (qui déplie ensuite tout l'arbre)
 INITIAL_LEVEL = 2
 
 
@@ -105,6 +105,13 @@ TRANSLATIONS = {
         "value_not_applied": "Valeur non appliquée : l'expression donne {expected}, "
                              "la propriété vaut {value} (refusée, ou document à recalculer)",
         "object_invalid_state": "Objet en erreur : {status}",
+        "value_not_number": "L'expression donne le texte {expected}, la propriété attend un nombre",
+        "error_cause": "Cause de l'erreur de {ref} : contient le texte {value}, là où un nombre "
+                       "est attendu.\n{name} n'est pas en erreur elle-même : elle n'est en orange "
+                       "que sous {ref}.",
+        "error_suspect": "Utilisée par {ref}, qui est en erreur : valeur à vérifier.\n"
+                         "{name} n'est pas en erreur elle-même : elle n'est en orange italique "
+                         "que sous {ref}.",
         "constraint_conflict": "Contrainte refusée par le solveur ({kind}) : {status}",
         "used_by": "Est utilisé par",
         "content_of": "Contenu de",
@@ -206,6 +213,11 @@ TRANSLATIONS = {
         "value_not_applied": "Value not applied: the expression gives {expected}, "
                              "the property is {value} (refused, or document to recompute)",
         "object_invalid_state": "Object in error: {status}",
+        "value_not_number": "The expression gives the text {expected}, the property expects a number",
+        "error_cause": "Cause of the error of {ref}: contains the text {value}, where a number "
+                       "is expected.\n{name} is not in error itself: it is orange only under {ref}.",
+        "error_suspect": "Used by {ref}, which is in error: value to check.\n"
+                         "{name} is not in error itself: it is orange italic only under {ref}.",
         "constraint_conflict": "Constraint refused by the solver ({kind}): {status}",
         "used_by": "Used by",
         "content_of": "Content of",
@@ -821,6 +833,11 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
                 message = error_message(expected)
             except Exception as e:  # volontaire : référence inconnue, syntaxe...
                 message = str(e)
+            # texte pour une propriété numérique (ex : D7 contient 'a') : FreeCAD
+            # refuse toute la propriété (AttachmentOffset) sans dire quel terme
+            # (Base.x) est en cause ; c'est celui-ci
+            if not message and isinstance(expected, str) and as_number(value) is not None:
+                message = tr("value_not_number").format(expected=repr(expected))
             # valeur refusée (solveur, valeur interdite...) : la propriété ne vaut
             # pas ce que donne l'expression
             # (sauf l'axe d'une rotation : FreeCAD le ramène à une longueur de 1,
@@ -879,20 +896,22 @@ def error_message(value):
     return next((m.strip() for m in value.split("ERR:") if m.strip()), value)
 
 
+def as_number(v):
+    # nombre ou Quantity (valeur en unités de base : mm, °) -> float ; sinon None
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    if hasattr(v, "Value") and isinstance(v.Value, (int, float)):
+        return float(v.Value)
+    return None
+
+
 def same_number(expected, value):
     # True si les deux valeurs sont égales, ou si on ne sait pas les comparer
-    # (Placement, texte...). Quantity : valeur en unités de base (mm, °) ;
-    # les angles des contraintes et des rotations sont en radians : accepter les deux.
-    def number(v):
-        if isinstance(v, bool):
-            return None
-        if isinstance(v, (int, float)):
-            return float(v)
-        if hasattr(v, "Value") and isinstance(v.Value, (int, float)):
-            return float(v.Value)
-        return None
-
-    a, b = number(expected), number(value)
+    # (Placement, texte...).
+    # Les angles des contraintes et des rotations sont en radians : accepter les deux.
+    a, b = as_number(expected), as_number(value)
     if a is None or b is None:
         return True
     # tolérance : le solveur et les calculs en flottants donnent 9.9999999 au lieu de 10
@@ -1013,7 +1032,33 @@ def build_graph():
     # 5) Erreurs : origine et propagation
     mark_errors(graph)
 
+    # 6) Ce qu'utilise une ligne à l'origine de son erreur (en gras), sans être en
+    #    erreur (sinon la ligne ne serait pas l'origine). Affiché seulement à côté
+    #    de la ligne en erreur :
+    #    - error_causes   : valeurs texte (ex : D7 contient 'a') = cause certaine, en orange
+    #    - error_suspects : s'il n'y a pas de texte, toutes ses valeurs utilisées,
+    #                       à vérifier, en orange italique
+    for ref, node in graph.items():
+        if ref not in node["error_origins"]:
+            continue
+        used = [p for p in node["parents"] if p in graph]
+        node["error_causes"] = {
+            p for p in used
+            if isinstance(graph[p]["value"], str) and not error_message(graph[p]["value"])}
+        if not node["error_causes"]:
+            node["error_suspects"] = set(used)
+
     return graph
+
+
+def error_link(graph, error_ref, used_ref):
+    # used_ref, utilisée par error_ref en erreur : "cause", "suspect" ou None (voir build_graph 6)
+    node = graph[error_ref]
+    if used_ref in node.get("error_causes", ()):
+        return "cause"
+    if used_ref in node.get("error_suspects", ()):
+        return "suspect"
+    return None
 
 
 def normalize_ref(ref, current_sheet_name, label_to_name, alias_map):
@@ -1454,8 +1499,9 @@ class RefDialog2(QtGui.QDialog):
         # ============================================================
         self.load_settings()
 
-        # Premier affichage
+        # Premier affichage : tout déplié, pour voir toutes les lignes
         self.recompute()
+        self.expand_all()
 
     def wait_for_recompute(self):
         from PySide import QtCore
@@ -1992,8 +2038,15 @@ class RefDialog2(QtGui.QDialog):
             if child_ref not in reachable:
                 continue
 
+            # branche Uses : child_ref est la cause ou un suspect de l'erreur de ref
+            # (voir build_graph 6) ; visible avec la case Erreurs
+            link = None
+            if relation_key == "parents":
+                link = error_link(self.graph, ref, child_ref)
+
             if not self.should_display(child_ref, root_ref, reachable, relation_key):
-                continue
+                if not (link and self.filter_errors.isChecked()):
+                    continue
 
             node = self.graph[child_ref]
             cols = self.enrich_columns(child_ref, node)
@@ -2009,6 +2062,22 @@ class RefDialog2(QtGui.QDialog):
             tooltip = self.build_tooltip(child_ref)
             for col in range(self.tree.columnCount()):
                 item.setToolTip(col, tooltip)
+
+            # --- Orange : cause (ou suspect, en italique) d'une erreur sans être en
+            #     erreur (voir build_graph 6) ---
+            # - Uses : child_ref (ex D7) est utilisée par ref en erreur (ex Base.x)
+            # - Used by : ref (ex D7) est utilisée par child_ref en erreur, juste en
+            #   dessous : la ligne de ref (ou, pour la racine, celle au-dessus de la
+            #   section "Est utilisé par")
+            if link:
+                self.mark_cause(item, child_ref, ref, link)
+            elif relation_key == "children":
+                link = error_link(self.graph, child_ref, ref)
+                line = parent_item
+                if link and line.data(0, QtCore.Qt.UserRole) != ref:
+                    line = line.parent()
+                if link and line is not None:
+                    self.mark_cause(line, ref, child_ref, link)
 
             # --- Récursion ---
             recursive_func(item, child_ref, reachable, root_ref)
@@ -2026,6 +2095,27 @@ class RefDialog2(QtGui.QDialog):
             relation_key="children",
             recursive_func=self.add_out_recursive
         )
+
+    # --------------------------------------------------------
+    # Ligne de cause_ref (ex D7), utilisée par error_ref en erreur (ex
+    # Sketch.AttachmentOffset.Base.x) sans être en erreur elle-même :
+    # - link "cause"   : orange (valeur texte, cause certaine)
+    # - link "suspect" : orange italique (valeur à vérifier)
+    # --------------------------------------------------------
+    def mark_cause(self, item, cause_ref, error_ref, link):
+        brush = QtGui.QBrush(QtGui.QColor(230, 120, 0))
+        if link == "cause":
+            text = tr("error_cause").format(
+                ref=error_ref, name=cause_ref, value=repr(self.graph[cause_ref]["value"]))
+        else:
+            text = tr("error_suspect").format(ref=error_ref, name=cause_ref)
+        for col in range(self.tree.columnCount()):
+            item.setForeground(col, brush)
+            if link == "suspect":
+                font = item.font(col)
+                font.setItalic(True)
+                item.setFont(col, font)
+            item.setToolTip(col, item.toolTip(col) + "\n" + text)
 
     # --------------------------------------------------------
     # Ligne en rouge si en erreur, en gras si elle est l'origine de l'erreur
