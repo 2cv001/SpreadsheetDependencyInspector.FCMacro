@@ -15,6 +15,7 @@ The language used is the one you selected in your FreeCAD preferences.
 **Usage:** 
 
 Select one or several cells, then run the macro. Choose the information you want to display.
+You can also start from a property selected in the property view, or from objects selected in the tree or the 3D view (Body, Sketch, Pad...: their properties that have an expression, are used or are in error, including the content of a Body, Part or group). Select the document at the top of the tree to analyse the whole project. Run without any selection, the macro shows a help window.
 
 The refresh button <img width="36" height="30" alt="image" src="https://github.com/user-attachments/assets/dcc1fc5e-25ed-461c-87eb-7176b053d575" />  recalculates the analysis, for example after you modify a cell or change the selection.
 The expand/collapse button lets you expand or collapse the whole tree. You can also do it branch by branch by clicking on the ▶ or ▼ symbols.
@@ -36,6 +37,7 @@ La langues est celle que vous avez choisi dans les préférences de FreeCAD
 **Mode d'utilisation :** 
 
 Sélectionnez une ou plusieurs cellules, puis lancez la macro. Sélectionner les informations que vous souhaitez voir.
+Vous pouvez aussi partir d'une propriété sélectionnée dans la fenêtre des propriétés, ou d'objets sélectionnés dans l'arbre ou la vue 3D (Body, Sketch, Pad... : leurs propriétés qui ont une expression, sont utilisées ou sont en erreur, y compris le contenu d'un Body, d'un Part ou d'un groupe). Sélectionnez le document en haut de l'arbre pour analyser tout le projet. Lancée sans aucune sélection, la macro affiche une fenêtre d'aide.
 
 Le bouton refresh <img width="36" height="30" alt="image" src="https://github.com/user-attachments/assets/131cef95-d078-475c-a95c-97890e5dc68f" />
  permet de relancer le calcul lorsque par exemple vous avez modifié une cellule ou changé la sélection.

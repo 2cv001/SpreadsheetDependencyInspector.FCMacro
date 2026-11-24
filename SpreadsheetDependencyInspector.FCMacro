@@ -9,7 +9,7 @@
 
 __Title__ = "Spreadsheet_Dependency_Inspector"
 __Author__ = "2cv001"
-__Date__ = "2026/11/23 14:29"  # YYYY/MM/DD
+__Date__ = "2026/11/24 08:29"  # YYYY/MM/DD
 __Version__ = __Date__
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -20,6 +20,7 @@ __License__ = "Apache-2.0"
 
 import xml.etree.ElementTree as ET
 import re
+import math
 from collections import namedtuple
 import os
 from PySide import QtGui, QtCore
@@ -88,6 +89,9 @@ TRANSLATIONS = {
         "filter_cells": "Cellules",
         "filter_constraints": "Contraintes",
         "filter_others": "Autres",
+        "filter_errors": "Erreurs",
+        "hint_errors": "Cochée : les lignes en erreur (en rouge) sont toujours affichées, "
+                       "même si les autres cases les masqueraient.",
         "show_names": "Noms",
         "show_labels_alias": "Label/alias",
         "show_constraint_types": "Type",        "lines_shown": "Lignes",
@@ -97,6 +101,11 @@ TRANSLATIONS = {
 
         # Sections arbre
         "uses": "Utilise",
+        "error_inherited": "Erreur venant de : {refs}",
+        "value_not_applied": "Valeur non appliquée : l'expression donne {expected}, "
+                             "la propriété vaut {value} (refusée, ou document à recalculer)",
+        "object_invalid_state": "Objet en erreur : {status}",
+        "constraint_conflict": "Contrainte refusée par le solveur ({kind}) : {status}",
         "used_by": "Est utilisé par",
         "content_of": "Contenu de",
         "expression_of": "Expression de",
@@ -116,10 +125,26 @@ TRANSLATIONS = {
 
         # Divers
         "error_title": "Erreur",
-        "error_select_cells": "Sélectionnez des cellules dans un Spreadsheet, "
-                              "ou une propriété dans la fenêtre des propriétés.",
+        "help_text":
+            "<p>La macro affiche sous forme d'arbre les dépendances entre les cellules des "
+            "tableurs, les propriétés des objets et les contraintes des esquisses : ce que "
+            "chaque élément utilise, et ce qui l'utilise. Les éléments en erreur sont en rouge, "
+            "l'origine de l'erreur en gras.</p>"
+            "<p><b>Avant de lancer la macro, sélectionnez le point de départ :</b></p>"
+            "<ul>"
+            "<li>une ou plusieurs cellules dans un tableur ouvert ;</li>"
+            "<li>une propriété dans la fenêtre des propriétés (ex : Longueur d'une protrusion) ;</li>"
+            "<li>un ou plusieurs objets dans l'arbre ou la vue 3D (Body, esquisse, "
+            "protrusion…) : leurs propriétés qui ont une expression, sont utilisées ou en erreur ;</li>"
+            "<li>le document, tout en haut de l'arbre, pour analyser tout le projet.</li>"
+            "</ul>"
+            "<p>Une fois la fenêtre ouverte, le bouton Relancer repart de la nouvelle sélection.</p>"
+            "<p><a href=\"{wiki}\">Documentation (wiki FreeCAD)</a></p>",
+        "help_no_document": "Ouvrez d'abord un document FreeCAD.",
         "property_no_dependency": "La propriété {prop} n'utilise aucune cellule ni propriété, "
                                   "et aucune ne l'utilise.",
+        "object_no_dependency": "Aucune propriété ni cellule de {obj} n'a d'expression, "
+                                "n'est utilisée ou n'est en erreur.",
         "sketch_not_open_title": "Sketch non ouvert",
         "sketch_not_open_msg": "Impossible d'ouvrir le sketch en mode édition : aucune vue 3D n'est ouverte "
                                "pour ce document, et la macro n'a pas pu en ouvrir une."
@@ -165,6 +190,9 @@ TRANSLATIONS = {
         "filter_cells": "Cells",
         "filter_constraints": "Constraints",
         "filter_others": "Others",
+        "filter_errors": "Errors",
+        "hint_errors": "Checked: the lines in error (in red) are always shown, "
+                       "even if the other boxes would hide them.",
         "show_names": "Names",
         "show_labels_alias": "label/alias",
         "show_constraint_types": "type",        "middle_group": "Columns",
@@ -174,6 +202,11 @@ TRANSLATIONS = {
 
         # Sections arbre
         "uses": "Uses",
+        "error_inherited": "Error coming from: {refs}",
+        "value_not_applied": "Value not applied: the expression gives {expected}, "
+                             "the property is {value} (refused, or document to recompute)",
+        "object_invalid_state": "Object in error: {status}",
+        "constraint_conflict": "Constraint refused by the solver ({kind}): {status}",
         "used_by": "Used by",
         "content_of": "Content of",
         "expression_of": "Expression of",
@@ -193,8 +226,23 @@ TRANSLATIONS = {
 
         #Divers
         "error_title": "Error",
-        "error_select_cells": "Select cells in a Spreadsheet, or a property in the property view.",
+        "help_text":
+            "<p>The macro shows as a tree the dependencies between spreadsheet cells, object "
+            "properties and sketch constraints: what each item uses, and what uses it. Items in "
+            "error are shown in red, the origin of the error in bold.</p>"
+            "<p><b>Before running the macro, select the starting point:</b></p>"
+            "<ul>"
+            "<li>one or several cells in an open spreadsheet;</li>"
+            "<li>a property in the property view (e.g. Length of a Pad);</li>"
+            "<li>one or several objects in the tree or the 3D view (Body, Sketch, Pad…): "
+            "their properties that have an expression, are used or are in error;</li>"
+            "<li>the document, at the top of the tree, to analyse the whole project.</li>"
+            "</ul>"
+            "<p>Once the window is open, the Re-run button starts again from the new selection.</p>"
+            "<p><a href=\"{wiki}\">Documentation (FreeCAD wiki)</a></p>",
+        "help_no_document": "Open a FreeCAD document first.",
         "property_no_dependency": "The property {prop} uses no cell or property, and none uses it.",
+        "object_no_dependency": "No property or cell of {obj} has an expression, is used or is in error.",
         "sketch_not_open_title": "Sketch not open",
         "sketch_not_open_msg": "Unable to open the sketch in edit mode: no 3D view is open for this document, "
                                "and the macro could not open one."
@@ -473,10 +521,18 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
         if graph[cell_ref]["label"] is None or graph[cell_ref]["label"] == graph[cell_ref]["cell"]:
             graph[cell_ref]["label"] = alias if alias else addr
 
-        graph[cell_ref]["value"] = sheet.get(addr)
+        try:
+            graph[cell_ref]["value"] = sheet.get(addr)
+        except Exception as e:  # volontaire : cellule illisible = en erreur
+            graph[cell_ref]["errors"].add(str(e))
 
         if content.startswith("#"):
             graph[cell_ref]["errors"].add(content)
+        elif content.startswith("="):
+            # FreeCAD met "ERR: message" comme valeur d'une cellule en erreur
+            message = error_message(graph[cell_ref]["value"])
+            if message:
+                graph[cell_ref]["errors"].add(message)
 
         # --- DÉPENDANCES ---
         if content.startswith("="):
@@ -756,6 +812,24 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
         graph[ref_obj]["value"] = value
         graph[ref_obj]["constraint_type"] = ctype
 
+        # --- 4b) Expression en erreur : FreeCAD ne l'applique pas, la propriété
+        #         garde son ancienne valeur ---
+        if hasattr(obj, "evalExpression"):
+            expected = None
+            try:
+                expected = obj.evalExpression(expr)
+                message = error_message(expected)
+            except Exception as e:  # volontaire : référence inconnue, syntaxe...
+                message = str(e)
+            # valeur refusée (solveur, valeur interdite...) : la propriété ne vaut
+            # pas ce que donne l'expression
+            # (sauf l'axe d'une rotation : FreeCAD le ramène à une longueur de 1,
+            #  ex x = 10 devient 0.99995, et la fenêtre des propriétés affiche 10)
+            if not message and "Rotation.Axis" not in prop and not same_number(expected, value):
+                message = tr("value_not_applied").format(expected=expected, value=value)
+            if message:
+                graph[ref_obj]["errors"].add(message)
+
         # --- 5) DÉPENDANCES ---
         parents_bruts = extract_raw_refs_for_graph(expr, None, alias_map)
 
@@ -797,6 +871,67 @@ def traiter_objet(obj, graph, label_to_name, alias_map):
                                             graph[p2_norm]["children"].add(ref_prop)
 
 
+def error_message(value):
+    # 'ERR: msg' (valeur d'une cellule en erreur, répétée quand l'erreur vient
+    # d'une autre cellule) -> 'msg' ; None si value n'est pas une erreur
+    if not isinstance(value, str) or not value.startswith("ERR:"):
+        return None
+    return next((m.strip() for m in value.split("ERR:") if m.strip()), value)
+
+
+def same_number(expected, value):
+    # True si les deux valeurs sont égales, ou si on ne sait pas les comparer
+    # (Placement, texte...). Quantity : valeur en unités de base (mm, °) ;
+    # les angles des contraintes et des rotations sont en radians : accepter les deux.
+    def number(v):
+        if isinstance(v, bool):
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        if hasattr(v, "Value") and isinstance(v.Value, (int, float)):
+            return float(v.Value)
+        return None
+
+    a, b = number(expected), number(value)
+    if a is None or b is None:
+        return True
+    # tolérance : le solveur et les calculs en flottants donnent 9.9999999 au lieu de 10
+    return any(math.isclose(x, b, rel_tol=1e-5, abs_tol=1e-4) for x in (a, math.radians(a)))
+
+
+def mark_errors(graph):
+    # Erreurs propagées : une cellule ou propriété est en erreur si elle a sa
+    # propre erreur, ou si elle utilise une cellule / propriété en erreur.
+    # node["error_origins"] : les refs d'où vient l'erreur ([ref] si elle en est l'origine)
+    def origins(ref, visiting):
+        node = graph[ref]
+        if "error_origins" in node:
+            return node["error_origins"]
+        if ref in visiting:  # boucle de références
+            return set()
+        visiting.add(ref)
+        found = set()
+        for parent in node["parents"]:
+            if parent in graph:
+                found |= origins(parent, visiting)
+        visiting.discard(ref)
+        if node["errors"] and not found and node.get("upstream_errors"):
+            found = set(node["upstream_errors"])  # erreur venant d'un objet en amont
+        elif node["errors"] and not found:
+            found = {ref}  # la ref est l'origine de l'erreur
+        elif node["errors"] or (found and node["kind"] == "cell"):
+            pass  # erreur héritée
+        elif found:
+            # propriété sans erreur propre utilisant une ref en erreur : FreeCAD n'a
+            # pas vu d'erreur, elle garde une valeur qui n'est peut-être plus à jour
+            found = set()
+        node["error_origins"] = found
+        return found
+
+    for ref in graph:
+        origins(ref, set())
+
+
 def build_graph():
     graph = {}
 
@@ -818,6 +953,65 @@ def build_graph():
     for obj in doc.Objects:
         if obj.TypeId == "Spreadsheet::Sheet":
             traiter_feuille(obj, graph, label_to_name, alias_map)
+
+    # 4) Objets en erreur (sketch non résolu, pad impossible...)
+    for obj in doc.Objects:
+        if "Invalid" not in getattr(obj, "State", ()) or not hasattr(obj, "ExpressionEngine"):
+            continue
+        refs = [obj.Name + "." + prop.lstrip(".") for prop, _ in obj.ExpressionEngine]
+        refs = [r for r in refs if r in graph]
+        try:
+            status = " ".join(obj.getStatusString().split())
+        except Exception:  # volontaire : message seulement
+            status = "Invalid"
+
+        # 4a) Sketch : le solveur donne les contraintes en cause (numéros à partir de 1)
+        found = False
+        for attr, kind in (("ConflictingConstraints", "conflict"),
+                           ("RedundantConstraints", "redundant"),
+                           ("MalformedConstraints", "malformed")):
+            for number in getattr(obj, attr, None) or ():
+                for r in refs:
+                    if constraint_index(graph[r]) == number - 1:
+                        graph[r]["errors"].add(
+                            tr("constraint_conflict").format(kind=kind, status=status))
+                        found = True
+
+        # 4b) Sinon, si aucune de ses propriétés n'est repérée, elles sont toutes suspectes
+        if not found and not any(graph[r]["errors"] for r in refs):
+            for r in refs:
+                graph[r]["errors"].add(tr("object_invalid_state").format(status=status))
+
+    # 4b') Objet en erreur sans expression (ex : Pad invalide) : une ligne pour l'objet
+    #      lui-même, pour qu'il soit visible avec la case Erreurs
+    for obj in doc.Objects:
+        if "Invalid" not in getattr(obj, "State", ()) or obj.TypeId == "Spreadsheet::Sheet":
+            continue
+        if any(n["object"] == obj.Name and n["kind"] == "property" for n in graph.values()):
+            continue
+        try:
+            status = " ".join(obj.getStatusString().split())
+        except Exception:  # volontaire : message seulement
+            status = "Invalid"
+        create_or_update_node(graph, obj.Name, kind="object", obj_name=obj.Name)
+        graph[obj.Name]["label"] = obj.Label
+        graph[obj.Name]["errors"].add(tr("object_invalid_state").format(status=status))
+
+    # 4c) Objet en aval d'un objet en erreur (ex : Pad d'un Sketch non résolu) : son
+    #     erreur vient de cet objet, pas de ses propres propriétés
+    error_objects = {n["object"] for n in graph.values() if n["errors"] and n["kind"] == "property"}
+    error_objects |= {o.Name for o in doc.Objects if "Invalid" in getattr(o, "State", ())
+                      and o.TypeId != "Spreadsheet::Sheet"}
+    for node in graph.values():
+        if node["errors"] and node["kind"] in ("property", "object"):
+            obj = doc.getObject(node["object"])
+            upstream = getattr(obj, "OutListRecursive", ()) if obj else ()
+            node["upstream_errors"] = sorted(
+                o.Name for o in upstream
+                if o.Name in error_objects and o.TypeId != "Spreadsheet::Sheet")
+
+    # 5) Erreurs : origine et propagation
+    mark_errors(graph)
 
     return graph
 
@@ -957,6 +1151,43 @@ def explore_graph(ref, graph, allow_parents=True, allow_children=True, visited=N
     return visited
 
 
+def objects_in_scope(names):
+    """
+    Objets désignés par names (noms internes), avec le contenu des conteneurs
+    (Body, Part, groupes : propriété Group), dans l'ordre du document.
+    names vide = tout le document.
+    """
+    doc = App.ActiveDocument
+    if not names:
+        return list(doc.Objects)
+    found = {}
+
+    def add(obj):
+        if obj is None or obj.Name in found:
+            return
+        found[obj.Name] = obj
+        for child in getattr(obj, "Group", None) or []:
+            add(child)
+
+    for name in names:
+        add(doc.getObject(name))
+    return [o for o in doc.Objects if o.Name in found]
+
+
+def object_root_refs(graph, objects):
+    """
+    Racines de l'arbre quand on part d'objets : leurs propriétés (et cellules pour un
+    tableur) qui ont une expression, sont utilisées ou sont en erreur.
+    Retourne [(objet, [refs triées])], sans les objets qui n'en ont aucune.
+    Une cellule sans lien (valeur simple) n'est pas retenue.
+    """
+    by_object = {}
+    for ref, node in graph.items():
+        if node["parents"] or node["children"] or node["errors"]:
+            by_object.setdefault(ref.partition(".")[0], []).append(ref)
+    return [(o, sorted(by_object[o.Name])) for o in objects if o.Name in by_object]
+
+
 def ask_keep_invalid_change(title, message, allow_keep=True):
     box = QtGui.QMessageBox(FreeCADGui.getMainWindow())
     box.setIcon(QtGui.QMessageBox.Warning)
@@ -982,14 +1213,17 @@ def ask_keep_invalid_change(title, message, allow_keep=True):
 
 
 class RefDialog2(QtGui.QDialog):
-    def __init__(self, sheet, root_property=None):
+    def __init__(self, sheet, root_property=None, root_objects=None):
         # root_property : ex 'Pad.Length' to start the tree from this property
         #                 instead of the cells selected in the spreadsheet
+        # root_objects  : ex ('Body',) to start the tree from these objects (and the
+        #                 content of the containers) ; () = the whole document
         super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
 
         self.last_level = 0
         self.sheet = sheet
         self.root_property = root_property
+        self.root_objects = root_objects
         self.graph = build_graph()
 
         # Flags internes
@@ -1054,9 +1288,16 @@ class RefDialog2(QtGui.QDialog):
         modes_box.addWidget(self.filter_constraints)
         modes_box.addWidget(self.filter_others)
 
+        self.filter_errors = QtGui.QCheckBox(tr("filter_errors"))
+        self.filter_errors.setChecked(True)
+        self.filter_errors.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
+        self.filter_errors.setToolTip(tr("hint_errors"))
+        modes_box.addWidget(self.filter_errors)
+
         self.filter_cells.toggled.connect(self.on_change_coche)
         self.filter_constraints.toggled.connect(self.on_change_coche)
         self.filter_others.toggled.connect(self.on_change_coche)
+        self.filter_errors.toggled.connect(self.on_change_coche)
 
         top_line.addWidget(group_lines)
         top_line.addSpacing(5)
@@ -1175,7 +1416,21 @@ class RefDialog2(QtGui.QDialog):
         # ============================================================
         #  Connexions
         # ============================================================
-        self.btn_refresh.clicked.connect(self.recompute)
+        self.btn_refresh.clicked.connect(self.on_refresh)
+
+        # Sélections vues au dernier lancement : le bouton Relancer repart
+        # de celle qui a changé depuis (propriété, cellules ou objets)
+        self._seen_property = current_selected_property()
+        self._seen_cells = current_selected_cells()
+        self._seen_objects = current_selected_objects()
+
+        # Où l'utilisateur a cliqué en dernier hors de cette fenêtre ("property",
+        # "objects" ou "cells"), relevé toutes les 300 ms : un simple relevé, qui n'intervient pas
+        # dans les clics (un suivi par le signal focusChanged cassait le double clic)
+        self._last_source = None
+        self._focus_timer = QtCore.QTimer(self)
+        self._focus_timer.timeout.connect(self.poll_focus)
+        self._focus_timer.start(300)
         self.btn_expand_all.clicked.connect(self.expand_all)
         self.btn_collapse_all.clicked.connect(self.collapse_all)
         self.level_spin.valueChanged.connect(self.set_expand_level)
@@ -1308,6 +1563,7 @@ class RefDialog2(QtGui.QDialog):
         self.filter_cells.setChecked(ui.getboolean("filter_cells", True))
         self.filter_constraints.setChecked(ui.getboolean("filter_constraints", True))
         self.filter_others.setChecked(ui.getboolean("filter_others", True))
+        self.filter_errors.setChecked(ui.getboolean("filter_errors", True))
 
         # --- Cases à cocher existantes ---
         self.show_formula.setChecked(ui.getboolean("show_formula", False))
@@ -1390,6 +1646,7 @@ class RefDialog2(QtGui.QDialog):
         config["UI"]["filter_cells"] = str(self.filter_cells.isChecked())
         config["UI"]["filter_constraints"] = str(self.filter_constraints.isChecked())
         config["UI"]["filter_others"] = str(self.filter_others.isChecked())
+        config["UI"]["filter_errors"] = str(self.filter_errors.isChecked())
 
         # --- Cases à cocher existantes ---
         config["UI"]["show_formula"] = str(self.show_formula.isChecked())
@@ -1428,6 +1685,7 @@ class RefDialog2(QtGui.QDialog):
             config.write(f)
 
     def closeEvent(self, event):
+        self._focus_timer.stop()
         self.save_settings()
         super().closeEvent(event)
 
@@ -1442,11 +1700,56 @@ class RefDialog2(QtGui.QDialog):
         self.tree.setColumnHidden(4, not self.show_constraint_types.isChecked()) # Type
 
     # --------------------------------------------------------
+    # Bouton Relancer : repartir de la sélection qui a changé depuis le
+    # dernier lancement (propriété dans la fenêtre des propriétés, ou cellules)
+    # --------------------------------------------------------
+    def poll_focus(self):
+        focus = QtGui.QApplication.focusWidget()
+        if focus is None or focus is self or self.isAncestorOf(focus):
+            return
+        tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
+        if tree is not None and (focus is tree or tree.isAncestorOf(focus)):
+            self._last_source = "property"
+        elif object_view_has_focus():  # arbre FreeCAD ou vue 3D
+            self._last_source = "objects"
+        elif current_selected_cells() is not None:  # fenêtre active = un tableur
+            self._last_source = "cells"
+
+    def on_refresh(self):
+        current = {
+            "property": current_selected_property(),
+            "cells": current_selected_cells(),
+            "objects": current_selected_objects(),
+        }
+        seen = {
+            "property": self._seen_property,
+            "cells": self._seen_cells,
+            "objects": self._seen_objects,
+        }
+        # dernier clic connu : il l'emporte sur les changements de sélection ;
+        # sinon la sélection qui a changé (si plusieurs : tableur, puis propriété, puis objets)
+        source = None
+        if self._last_source is not None and current[self._last_source] is not None:
+            source = self._last_source
+        else:
+            source = next((s for s in ("cells", "property", "objects")
+                           if current[s] is not None and current[s] != seen[s]), None)
+        if source == "property":
+            self.root_property, self.root_objects = current["property"], None
+        elif source == "objects":
+            self.root_property, self.root_objects = None, current["objects"]
+        elif source == "cells":
+            self.root_property, self.root_objects = None, None
+        self._seen_property = current["property"]
+        self._seen_cells = current["cells"]
+        self._seen_objects = current["objects"]
+        self.recompute()
+
+    # --------------------------------------------------------
     # RECOMPUTE
     def recompute(self):
 
         self._building = True
-        print('recompute lancé')
 
         try:
             # ------------------------------------------------------------
@@ -1455,38 +1758,49 @@ class RefDialog2(QtGui.QDialog):
             self.tree.clearFocus()
             self.tree.setFocus()
 
+            # Niveau affiché avant reconstruction (y compris les branches dépliées
+            # à la main), pour le garder ; au premier affichage : celui du compteur
+            if self.tree.topLevelItemCount():
+                level = self.displayed_level()
+            else:
+                level = self.level_spin.value()
+
             # ------------------------------------------------------------
-            # 1) à 4) Point de départ : la propriété choisie au lancement,
+            # 1) à 4) Point de départ : la propriété ou les objets choisis,
             #         sinon les cellules sélectionnées dans la feuille
+            #         roots : [(ligne titre de l'objet ou None, [refs])]
             # ------------------------------------------------------------
             if self.root_property is not None:
-                roots = self.property_roots()
+                roots = [(None, self.property_roots())]
+            elif self.root_objects is not None:
+                roots = self.object_roots()
             else:
-                roots = self.cell_roots()
+                roots = [(None, self.cell_roots())]
 
-            if not roots:
+            if not any(refs for _, refs in roots):
                 self.update_column_visibility()
                 return
 
             # ------------------------------------------------------------
-            # 5) Construire l’arbre
+            # 5) Construire l’arbre (sous la ligne de son objet s'il y en a une ;
+            #    ligne retirée si les filtres masquent tout son contenu)
             # ------------------------------------------------------------
-            for root in roots:
-                self.build_tree(root)
+            for header, refs in roots:
+                for root in refs:
+                    self.build_tree(root, header)
+                if header is not None and header.childCount() == 0:
+                    self.tree.takeTopLevelItem(self.tree.indexOfTopLevelItem(header))
 
             # ------------------------------------------------------------
-            # 6) Ajuster la profondeur max
+            # 6) et 7) Même niveau qu'avant, ou le plus profond qui existe encore
             # ------------------------------------------------------------
             depth = self.get_tree_depth()
+            level = max(1, min(level, depth))
+            self.level_spin.blockSignals(True)
             self.level_spin.setMaximum(depth)
-
-            if self.level_spin.value() > depth:
-                self.level_spin.setValue(depth)
-
-            # ------------------------------------------------------------
-            # 7) Déplier automatiquement
-            # ------------------------------------------------------------
-            self.set_expand_level(self.level_spin.value())
+            self.level_spin.setValue(level)
+            self.level_spin.blockSignals(False)
+            self.set_expand_level(level)
 
             # ------------------------------------------------------------
             # 8) Mise à jour de la visibilité des colonnes
@@ -1500,11 +1814,39 @@ class RefDialog2(QtGui.QDialog):
     # Texte du titre : la feuille, ou la propriété de départ
     # --------------------------------------------------------
     def title_target(self):
+        doc = App.ActiveDocument
         if self.root_property is not None:
             obj_name, _, path = self.root_property.partition(".")
-            obj = App.ActiveDocument.getObject(obj_name)
+            obj = doc.getObject(obj_name)
             return (obj.Label if obj else obj_name) + "." + path
-        return self.sheet.Label
+        if self.root_objects is not None:
+            if not self.root_objects:
+                return doc.Label
+            objs = [doc.getObject(n) for n in self.root_objects]
+            return ", ".join(o.Label for o in objs if o is not None)
+        return self.sheet.Label if self.sheet is not None else ""
+
+    # --------------------------------------------------------
+    # Point de départ = les objets sélectionnés (ou tout le document) : leurs
+    # propriétés et cellules qui ont une expression, sont utilisées ou en erreur,
+    # sous une ligne par objet quand il y en a plusieurs
+    # --------------------------------------------------------
+    def object_roots(self):
+        self.graph = build_graph()
+        self.setWindowTitle(f"{tr('title')} – {self.title_target()}")
+        self.tree.clear()
+        groups = object_root_refs(self.graph, objects_in_scope(self.root_objects))
+        if len(groups) == 1:
+            return [(None, groups[0][1])]
+        roots = []
+        for obj, refs in groups:
+            header = QtGui.QTreeWidgetItem(self.tree, [obj.Label, "", "", "", ""])
+            font = header.font(0)
+            font.setBold(True)
+            header.setFont(0, font)
+            header.setToolTip(0, f"Name : {obj.Name}\nLabel : {obj.Label}")
+            roots.append((header, refs))
+        return roots
 
     # --------------------------------------------------------
     # Point de départ = la propriété choisie au lancement
@@ -1523,34 +1865,34 @@ class RefDialog2(QtGui.QDialog):
         current_view = Gui.ActiveDocument.ActiveView
 
         # Si on est dans la vue 3D → ouvrir la feuille
-        if type(current_view).__name__ == "View3DInventorPy":
+        if type(current_view).__name__ == "View3DInventorPy" and self.sheet is not None:
             self.sheet.ViewObject.doubleClicked()
-            print('focus changé')
 
             # IMPORTANT : relire la vue active
             current_view = Gui.ActiveDocument.ActiveView
-            print('current_view', current_view)
 
         # Essayer de récupérer la feuille via la vue
         new_sheet = None
         if hasattr(current_view, "getSheet"):
             try:
                 new_sheet = current_view.getSheet()
-            except Exception:
-                print("getSheet() a échoué")
+            except Exception:  # volontaire : la feuille est cherchée ensuite dans la sélection
+                pass
 
         # Fallback : récupérer via la sélection
         if not new_sheet:
             sel = Gui.Selection.getSelection()
             if sel and sel[0].TypeId == "Spreadsheet::Sheet":
                 new_sheet = sel[0]
-            else:
-                print("new_sheet est à None")
 
         # Si la feuille a changé → reconstruire le graphe
         if new_sheet and new_sheet != self.sheet:
             self.sheet = new_sheet
             self.graph = build_graph()
+
+        if self.sheet is None:  # lancé depuis une propriété, sans tableur ouvert
+            self.tree.clear()
+            return []
 
         # 2) Mise à jour du titre
         self.setWindowTitle(f"{tr('title')} – {self.sheet.Label}")
@@ -1579,50 +1921,24 @@ class RefDialog2(QtGui.QDialog):
 
     # --- Fonctions de catégorisation ---
     def should_display(self, ref, root_ref, reachable, branch_direction):
+        # Ligne affichée si elle correspond aux cases cochées, ou si elle mène (dans la
+        # direction de sa branche : parents = Uses, children = Used by) à une ligne affichée
         if reachable is None:
             reachable = self.graph.keys()
+        return (self.matches_filters(self.graph[ref])
+                or self.has_descendant_matching(ref, branch_direction, reachable))
 
-        node = self.graph[ref]
+    def matches_filters(self, node):
+        # La ligne correspond aux cases cochées : sa catégorie (Cellules, Contraintes,
+        # Autres), ou Erreurs si elle est en erreur (Erreurs ne masque jamais rien)
         cat = self.get_node_category(node)
-
-        # 1) Le nœud correspond directement à un filtre
         if cat == "cell" and self.filter_cells.isChecked():
             return True
-
         if cat == "constraint" and self.filter_constraints.isChecked():
             return True
-
         if cat == "other" and self.filter_others.isChecked():
             return True
-
-        # 2) Descendants dans LA direction du sous-arbre
-        if branch_direction == "parents":  # Branche Uses
-            if self.filter_cells.isChecked():
-                if self.has_descendant_of_category(ref, "cell", "parents", reachable):
-                    return True
-
-            if self.filter_constraints.isChecked():
-                if self.has_descendant_of_category(ref, "constraint", "parents", reachable):
-                    return True
-
-            if self.filter_others.isChecked():
-                if self.has_descendant_of_category(ref, "other", "parents", reachable):
-                    return True
-
-        if branch_direction == "children":  # Branche Used by
-            if self.filter_cells.isChecked():
-                if self.has_descendant_of_category(ref, "cell", "children", reachable):
-                    return True
-
-            if self.filter_constraints.isChecked():
-                if self.has_descendant_of_category(ref, "constraint", "children", reachable):
-                    return True
-
-            if self.filter_others.isChecked():
-                if self.has_descendant_of_category(ref, "other", "children", reachable):
-                    return True
-
-        return False
+        return bool(self.filter_errors.isChecked() and node.get("error_origins"))
 
     def get_node_category(self, node):
         """
@@ -1643,55 +1959,26 @@ class RefDialog2(QtGui.QDialog):
         # 3) Tout le reste
         return "other"
 
-    def has_descendant_of_category(self, ref, category, direction, reachable=None, visited=None):
+    def has_descendant_matching(self, ref, direction, reachable=None, visited=None):
         """
-        Version instrumentée : affiche tout ce qui est exploré,
-        en respectant STRICTEMENT la direction donnée.
+        Une ligne atteignable depuis ref, en suivant STRICTEMENT la direction donnée
+        ("parents" = Uses, "children" = Used by), correspond aux cases cochées.
         """
-
         if reachable is None:
             reachable = self.graph.keys()
-
         if visited is None:
             visited = set()
-
         if ref in visited:
             return False
         visited.add(ref)
 
-        node = self.graph[ref]
-        cat = self.get_node_category(node)
-
-        # --- Direction parents (Uses) ---
-        if direction == "parents":
-            for p in self.graph[ref]["parents"]:
-                if p not in reachable:
-                    continue
-
-                node_p = self.graph[p]
-                cat_p = self.get_node_category(node_p)
-
-                if cat_p == category:
-                    return True
-
-                if self.has_descendant_of_category(p, category, "parents", reachable, visited):
-                    return True
-
-        # --- Direction children (Used by) ---
-        if direction == "children":
-            for c in self.graph[ref]["children"]:
-                if c not in reachable:
-                    continue
-
-                node_c = self.graph[c]
-                cat_c = self.get_node_category(node_c)
-
-                if cat_c == category:
-                    return True
-
-                if self.has_descendant_of_category(c, category, "children", reachable, visited):
-                    return True
-
+        for next_ref in self.graph[ref][direction]:
+            if next_ref not in reachable:
+                continue
+            if self.matches_filters(self.graph[next_ref]):
+                return True
+            if self.has_descendant_matching(next_ref, direction, reachable, visited):
+                return True
         return False
 
     # --------------------------------------------------------
@@ -1713,6 +2000,7 @@ class RefDialog2(QtGui.QDialog):
 
             item = QtGui.QTreeWidgetItem(parent_item, cols)
             item.setData(0, QtCore.Qt.UserRole, child_ref)
+            self.style_error(item, child_ref)
 
             # Rendre l’item éditable (les colonnes interdites sont bloquées par le délégué)
             item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
@@ -1738,6 +2026,21 @@ class RefDialog2(QtGui.QDialog):
             relation_key="children",
             recursive_func=self.add_out_recursive
         )
+
+    # --------------------------------------------------------
+    # Ligne en rouge si en erreur, en gras si elle est l'origine de l'erreur
+    # --------------------------------------------------------
+    def style_error(self, item, ref):
+        origins = self.graph[ref].get("error_origins")
+        if not origins:
+            return
+        brush = QtGui.QBrush(QtGui.QColor(220, 40, 40))
+        for col in range(self.tree.columnCount()):
+            item.setForeground(col, brush)
+            if ref in origins:
+                font = item.font(col)
+                font.setBold(True)
+                item.setFont(col, font)
 
     def build_tooltip(self, ref):
         node = self.graph[ref]
@@ -1787,10 +2090,14 @@ class RefDialog2(QtGui.QDialog):
         if node.get("errors"):
             for err in node["errors"]:
                 lines.append(f"Error : {err}")
+        origins = node.get("error_origins") or set()
+        if origins and origins != {ref}:
+            lines.append(tr("error_inherited").format(refs=", ".join(sorted(origins))))
 
         return "\n".join(lines)
 
-    def build_tree(self, root):
+    def build_tree(self, root, parent_item=None):
+        # parent_item : ligne de l'objet sous laquelle placer la racine (None = en haut)
 
         # ------------------------------------------------------------
         # Protection : on indique qu'on construit l'arbre
@@ -1811,16 +2118,8 @@ class RefDialog2(QtGui.QDialog):
             # ------------------------------------------------------------
             root_visible = False
 
-            node = self.graph[root]
-            cat = self.get_node_category(node)
-
             # 2a) Si la racine correspond directement à un filtre → visible
-            if cat == "cell" and self.filter_cells.isChecked():
-                root_visible = True
-            elif cat == "constraint" and self.filter_constraints.isChecked():
-                root_visible = True
-            elif cat == "other" and self.filter_others.isChecked():
-                root_visible = True
+            root_visible = self.matches_filters(self.graph[root])
 
             # 2b) Sinon : tester les branches Uses et Used by
             if not root_visible and self.cb_out.isChecked():
@@ -1842,8 +2141,10 @@ class RefDialog2(QtGui.QDialog):
             # 3) Création de l’item racine
             # ------------------------------------------------------------
             cols_root = self.enrich_columns(root, self.graph[root])
-            root_item = QtGui.QTreeWidgetItem(self.tree, cols_root)
+            root_item = QtGui.QTreeWidgetItem(
+                self.tree if parent_item is None else parent_item, cols_root)
             root_item.setData(0, QtCore.Qt.UserRole, root)
+            self.style_error(root_item, root)
 
             # --- Rendre éditables les colonnes 1 et 3 ---
             # Rendre éditables uniquement les colonnes 1 (Alias) et 3 (Formule)
@@ -1899,8 +2200,27 @@ class RefDialog2(QtGui.QDialog):
             if d > max_depth:
                 max_depth = d
 
-        # On décale de 1, mais on ne descend jamais sous 1
-        return max(1, max_depth - 1)
+        # Niveau qui déplie tout l'arbre (voir set_expand_level) : le niveau N montre
+        # N+1 lignes de profondeur, sauf le niveau 1 qui ne montre que les racines.
+        # Ex : ligne d'objet -> lignes en erreur (2 lignes de profondeur) : niveau 2
+        return max_depth - 1 if max_depth >= 3 else max_depth
+
+    def displayed_level(self):
+        # Niveau (au sens du compteur, voir set_expand_level) correspondant à la ligne
+        # dépliée visible la plus profonde
+        deepest = -1
+
+        def rec(item, depth):
+            nonlocal deepest
+            if not item.isExpanded():
+                return
+            deepest = max(deepest, depth)
+            for i in range(item.childCount()):
+                rec(item.child(i), depth + 1)
+
+        for i in range(self.tree.topLevelItemCount()):
+            rec(self.tree.topLevelItem(i), 0)
+        return max(1, deepest + 1)
 
     def set_expand_level(self, level):
         # Applique un niveau d'expansion à l'arbre.
@@ -1944,7 +2264,7 @@ class RefDialog2(QtGui.QDialog):
 
         # Mettre à jour le spinbox sans déclencher le callback
         self.level_spin.blockSignals(True)
-        self.level_spin.setValue(max_depth - 1)
+        self.level_spin.setValue(self.get_tree_depth())
         self.level_spin.blockSignals(False)
 
     def collapse_all(self):
@@ -1984,7 +2304,10 @@ class RefDialog2(QtGui.QDialog):
         for ref in refs:
             obj_name, _, path = ref.partition(".")
             obj = doc.getObject(obj_name)
-            if obj is None or not path:
+            if obj is None:
+                continue
+            if not path:  # ligne d'un objet (objet en erreur sans expression)
+                properties.append((obj, None))
                 continue
             if obj.TypeId == "Spreadsheet::Sheet":
                 cells.append(ref)
@@ -2055,7 +2378,7 @@ class RefDialog2(QtGui.QDialog):
         Gui.Selection.clearSelection()
         for obj, _ in properties:
             Gui.Selection.addSelection(doc.Name, obj.Name)
-        if len({obj.Name for obj, _ in properties}) == 1:
+        if len({obj.Name for obj, _ in properties}) == 1 and properties[0][1]:
             path = properties[0][1]  # ex 'AttachmentOffset.Base.z' : jusqu'à la ligne z
             # la fenêtre des propriétés se met à jour un peu après la sélection
             QtCore.QTimer.singleShot(300, lambda: select_property_row(path))
@@ -2125,8 +2448,7 @@ class RefDialog2(QtGui.QDialog):
         Début d'édition utilisateur.
         On mémorise l’ancienne valeur pour détecter un vrai changement.
         """
-        if column not in (1, 3):
-            print(f"[EDIT BLOCKED] colonne non éditable : {column}")
+        if column not in (1, 3):  # colonnes non éditables
             return
 
         self._old_value = item.text(column)
@@ -2400,8 +2722,7 @@ class RefDialog2(QtGui.QDialog):
             if kind == "cell":
                 return self.handle_cell_change(node, item, column, new_value, old_value)
 
-            # 4) Tout le reste
-            print("IGNORED")
+            # 4) Tout le reste : rien à faire
             return
 
         finally:
@@ -2409,6 +2730,72 @@ class RefDialog2(QtGui.QDialog):
             self._editing = False
             self._old_value = None
             self._old_column = None
+
+
+# ------------------------------------------------------------
+# Sélections courantes (pour le bouton Relancer)
+# ------------------------------------------------------------
+def current_selected_property():
+    # ex 'Pad.Length', ou None si aucune propriété n'est sélectionnée
+    try:
+        selected = selectedPropertyInPropertyView()
+    except Exception:  # volontaire : simple aide au choix du point de départ
+        return None
+    return None if selected is None else selected.obj.Name + "." + selected.path
+
+
+def current_selected_cells():
+    # ex ('Spreadsheet', ('A1', 'B2')), ou None si la fenêtre active n'est pas un tableur
+    try:
+        view = Gui.ActiveDocument.ActiveView
+        sheet = view.getSheet()
+        cells = sheet.ViewObject.getView().selectedCells()
+    except Exception:  # volontaire : vue 3D, pas de document...
+        return None
+    return (sheet.Name, tuple(str(c) for c in cells))
+
+
+def current_selected_objects():
+    # noms des objets sélectionnés (arbre FreeCAD ou vue 3D), ex ('Body',) ;
+    # () si le document est sélectionné en haut de l'arbre = tout le document ;
+    # None si rien n'est sélectionné ou s'il n'y a pas de document
+    doc = App.ActiveDocument
+    if doc is None:
+        return None
+    names = [o.Name for o in Gui.Selection.getSelection() if o.Document == doc]
+    if names:
+        return tuple(dict.fromkeys(names))  # sans doublon, dans l'ordre
+    return () if document_selected_in_tree(doc) else None
+
+
+# Type des lignes "document" de l'arbre FreeCAD (TreeWidget::DocumentType dans Tree.cpp)
+TREE_DOCUMENT_ITEM_TYPE = 1000
+
+
+def document_selected_in_tree(doc):
+    # la ligne du document (tout en haut de l'arbre FreeCAD) est sélectionnée
+    for tree in Gui.getMainWindow().findChildren(QtGui.QTreeWidget):
+        if tree.metaObject().className() != "Gui::TreeWidget":
+            continue
+        for item in tree.selectedItems():
+            if item.type() == TREE_DOCUMENT_ITEM_TYPE or item.text(0) == doc.Label:
+                return True
+    return False
+
+
+def show_help():
+    # Fenêtre d'aide : lancée sans rien de sélectionné (ou sans document ouvert)
+    text = tr("help_text").format(wiki=__Wiki__)
+    if Gui.ActiveDocument is None:
+        text += "<p><b>" + tr("help_no_document") + "</b></p>"
+    box = QtGui.QMessageBox(Gui.getMainWindow())
+    box.setIcon(QtGui.QMessageBox.Information)
+    box.setWindowTitle(f"{__Name__} ({__Version__})")
+    box.setTextFormat(QtCore.Qt.RichText)
+    box.setText(text)
+    for label in box.findChildren(QtGui.QLabel):  # lien vers le wiki cliquable
+        label.setOpenExternalLinks(True)
+    box.exec()
 
 
 # ------------------------------------------------------------
@@ -2420,21 +2807,58 @@ def property_view_has_focus():
     return tree is not None and focus is not None and (focus is tree or tree.isAncestorOf(focus))
 
 
+def property_view_has_selection():
+    # une ligne est sélectionnée (en bleu) dans la fenêtre des propriétés
+    tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
+    return tree is not None and any(i.column() == 0 for i in tree.selectedIndexes())
+
+
+def object_view_has_focus():
+    # le focus est dans l'arbre FreeCAD ou dans une vue 3D
+    widget = QtGui.QApplication.focusWidget()
+    while widget is not None:
+        if widget.metaObject().className() in ("Gui::TreeWidget", "Gui::View3DInventor"):
+            return True
+        widget = widget.parentWidget()
+    return False
+
+
 try:
     view = Gui.ActiveDocument.ActiveView
     sheet = view.getSheet()
 except:
     sheet = None
 
-# Départ depuis une propriété : le focus est dans la fenêtre des propriétés,
-# ou la fenêtre active n'est pas un tableur (ex : vue 3D)
+# Point de départ :
+# - une propriété : le focus est dans la fenêtre des propriétés, ou la fenêtre
+#   active n'est pas un tableur (ex : vue 3D) et une propriété y est sélectionnée
+# - sinon des objets : le focus est dans l'arbre FreeCAD ou une vue 3D, ou la fenêtre
+#   active n'est pas un tableur ; le document sélectionné en haut de l'arbre = tout le document
+# - sinon les cellules sélectionnées dans le tableur actif
+# - rien de tout cela : fenêtre d'aide
 root_property = None
-if Gui.ActiveDocument is not None and (sheet is None or property_view_has_focus()):
-    selected_property = selectedPropertyInPropertyView()
-    if selected_property is not None:
-        root_property = selected_property.obj.Name + "." + selected_property.path
+root_objects = None
+if Gui.ActiveDocument is not None:
+    if property_view_has_focus() or (sheet is None and property_view_has_selection()):
+        selected_property = selectedPropertyInPropertyView()
+        if selected_property is not None:
+            root_property = selected_property.obj.Name + "." + selected_property.path
+    if root_property is None and (sheet is None or object_view_has_focus()):
+        root_objects = current_selected_objects()
 
-if root_property is not None:
+if root_objects is not None:
+    dlg = RefDialog2(sheet, root_objects=root_objects)
+    if object_root_refs(dlg.graph, objects_in_scope(root_objects)):
+        QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
+        dlg.show()
+    else:
+        QtGui.QMessageBox.information(
+            None,
+            tr("no_selection_title"),
+            tr("object_no_dependency").format(obj=dlg.title_target())
+        )
+        dlg.deleteLater()  # fenêtre non affichée : arrêter son minuteur
+elif root_property is not None:
     dlg = RefDialog2(sheet, root_property)
     if root_property in dlg.graph:
         QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
@@ -2445,12 +2869,9 @@ if root_property is not None:
             tr("no_selection_title"),
             tr("property_no_dependency").format(prop=dlg.title_target())
         )
+        dlg.deleteLater()  # fenêtre non affichée : arrêter son minuteur
 elif sheet is None:
-    QtGui.QMessageBox.warning(
-        None,
-        tr("error_title"),
-        tr("error_select_cells")
-    )
+    show_help()
 else:
     selected = sheet.ViewObject.getView().selectedCells()
     if not selected:
