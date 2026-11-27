@@ -11,7 +11,7 @@ The language used is the one you selected in your FreeCAD preferences.
 
 **Usage:**
 
-Select the starting point, then run the macro:
+Select the starting point of the analysis, then run the macro. This starting point can be:
 - one or several cells in an open spreadsheet;
 - one or several properties in the property view (e.g. Length of a Pad);
 - one or several constraints in a sketch being edited (in the 3D view or the constraint list), or elements of the sketch (line, circle, point, axis...): all the constraints on these elements are then selected in the sketch, including those without a value (perpendicular...), and the tree starts from them; a constraint without a name is shown as `Sketch.Constraints[5]  (Constraint6)`: the index of the expression starts at 0, the number in the FreeCAD list at 1;
@@ -19,20 +19,24 @@ Select the starting point, then run the macro:
 - the document, at the top of the tree, to analyse the whole project.
 
 **Lines shown:**
-- *Uses* / *Used by*: the two branches of each line.
-- *Cells*, *Constraints*, *Others*: the kinds of lines shown.
-- *Errors*: when checked, the lines in error are always shown, with what they use. When unchecked, it does not prevent the lines in error from being shown. With *Errors* alone, you only see the errors and their causes.
+
+In the *Lines* panel, check boxes let you choose the lines shown in the tree:
+- *Uses* / *Used by*: show, under each line, the branch of what it uses and the branch of what uses it.
+- *Cells*, *Constraints*, *Others*: show the lines of this kind (spreadsheet cells, sketch constraints, other object properties).
+- *Errors*: when checked, the lines in error are always shown, with what they use, even if the other boxes would hide them. When unchecked, the lines in error are still shown if the other boxes show them. With *Errors* alone, you only see the errors and their causes.
 - *Empty*: when checked, the selected starting points without any link are also shown (e.g. a cell that uses nothing and that nothing uses, an empty cell, a constraint without expression). The lines with links are shown as usual.
 
-**Columns:** Label/alias, Expression, Result and constraint Type can be shown or hidden.
+**Columns:** in the *Columns* panel, check boxes let you show or hide the Label/alias, Expression, Result and constraint Type columns.
 
-**Double-click:** *Zoom on constraint* checked, double-clicking a constraint also frames the 3D view on it: the elements it links and its dimension take about 1/3 of the window, to see around; unchecked, the view does not move (useful when you have set your zoom precisely).
+**Double-click:** in the *Double-click* panel, the *Zoom on constraint* box sets what a double-click on a constraint does. When checked, the 3D view is also framed on the constraint: the elements it links and its dimension take about 1/3 of the window, to see around. When unchecked, the view does not move (useful when you have set your zoom precisely).
 
 **Error detection in the FreeCAD document:**
-- **Red**: the cell or property is in error (cell error, expression that fails, value refused by FreeCAD, invalid object, sketch constraint refused by the solver).
-- **Bold red**: the error starts here; a red line without bold gets its error from another line (shown in its tooltip).
-- **Orange**: next to a line in error, the value that causes it, e.g. a cell containing the text `a` where a number is expected. The cell itself is not in error, so it is orange only next to that line.
-- **Orange italic**: next to a line in error whose cause is unknown (division by zero, pad of length zero...), the values it uses, to check.
+
+In the tree, the colour of a line shows its state:
+- **Red**: the line (cell, property or constraint) is in error: cell error, expression that fails, value refused by FreeCAD, invalid object, sketch constraint refused by the solver.
+- **Bold red**: the error starts from this line. A red line without bold gets its error from another line, shown in its tooltip.
+- **Orange**: in the *Uses* branch of a line in error, the value that causes the error, e.g. a cell containing the text `a` where a number is expected. This cell is not in error itself: it is orange only under the line in error.
+- **Orange italic**: in the *Uses* branch of a line in error, when the macro does not know which value is involved (division by zero, pad of length zero...), all the values used; one of them causes the error, check them one by one.
 
 The tooltip of each line explains its state.
 
@@ -83,7 +87,7 @@ La langue est celle que vous avez choisie dans les préférences de FreeCAD.
 
 **Mode d'utilisation :**
 
-Sélectionnez le point de départ, puis lancez la macro :
+Sélectionnez le point de départ de l'analyse, puis lancez la macro. Ce point de départ peut être :
 - une ou plusieurs cellules dans un tableur ouvert ;
 - une ou plusieurs propriétés dans la fenêtre des propriétés (ex : Longueur d'une protrusion) ;
 - une ou plusieurs contraintes dans une esquisse en cours d'édition (vue 3D ou liste des contraintes), ou des éléments de l'esquisse (ligne, cercle, point, axe...) : toutes les contraintes de ces éléments sont alors sélectionnées dans l'esquisse, y compris celles sans valeur (perpendicularité...), et l'arbre part d'elles ; une contrainte sans nom est affichée `Sketch.Constraints[5]  (Constraint6)` : l'index de l'expression part de 0, le numéro de la liste de FreeCAD de 1 ;
@@ -91,20 +95,24 @@ Sélectionnez le point de départ, puis lancez la macro :
 - le document, tout en haut de l'arbre, pour analyser tout le projet.
 
 **Lignes affichées :**
-- *Utilise* / *Est utilisé par* : les deux branches de chaque ligne.
-- *Cellules*, *Contraintes*, *Autres* : les types de lignes affichées.
-- *Erreurs* : cochée, les lignes en erreur sont toujours affichées, avec ce qu'elles utilisent. Décochée, elle n'empêche pas pour autant d'afficher les lignes en erreur. Avec *Erreurs* seule, on ne voit que les erreurs et leurs causes.
+
+Dans le panneau *Lignes*, des cases à cocher permettent de choisir les lignes affichées dans l'arbre :
+- *Utilise* / *Est utilisé par* : affichent, sous chaque ligne, la branche de ce qu'elle utilise et celle de ce qui l'utilise.
+- *Cellules*, *Contraintes*, *Autres* : affichent les lignes de ce type (cellules des tableurs, contraintes des esquisses, autres propriétés des objets).
+- *Erreurs* : cochée, les lignes en erreur sont toujours affichées, avec ce qu'elles utilisent, même si les autres cases les masqueraient. Décochée, les lignes en erreur restent affichées si les autres cases les montrent. Avec *Erreurs* seule, on ne voit que les erreurs et leurs causes.
 - *Vide* : cochée, les points de départ sélectionnés sans aucun lien sont aussi affichés (ex : une cellule qui n'utilise rien et que rien n'utilise, une cellule vide, une contrainte sans expression). Les lignes qui ont des liens restent affichées comme d'habitude.
 
-**Colonnes :** Label/alias, Expression, Résultat et Type de contrainte peuvent être affichés ou masqués.
+**Colonnes :** dans le panneau *Colonnes*, des cases à cocher permettent d'afficher ou de masquer les colonnes Label/alias, Expression, Résultat et Type de contrainte.
 
-**Double-clic :** *Zoom sur contrainte* cochée, le double-clic sur une contrainte cadre aussi la vue 3D sur elle : les éléments qu'elle relie et sa cote occupent environ 1/3 de la fenêtre, pour voir autour ; décochée, la vue ne bouge pas (utile quand on a réglé son zoom précisément).
+**Double-clic :** dans le panneau *Double-clic*, la case *Zoom sur contrainte* règle ce que fait le double-clic sur une contrainte. Cochée, la vue 3D est aussi cadrée sur la contrainte : les éléments qu'elle relie et sa cote occupent environ 1/3 de la fenêtre, pour voir autour. Décochée, la vue ne bouge pas (utile quand on a réglé son zoom précisément).
 
 **Détection des erreurs dans le document FreeCAD :**
-- **Rouge** : la cellule ou la propriété est en erreur (erreur de cellule, expression qui échoue, valeur refusée par FreeCAD, objet invalide, contrainte d'esquisse refusée par le solveur).
-- **Rouge gras** : l'erreur part d'ici ; une ligne rouge sans gras tient son erreur d'une autre ligne (indiquée dans son infobulle).
-- **Orange** : à côté d'une ligne en erreur, la valeur qui la provoque, par exemple une cellule qui contient le texte `a` là où un nombre est attendu. La cellule elle-même n'est pas en erreur : elle n'est en orange qu'à côté de cette ligne.
-- **Orange italique** : à côté d'une ligne en erreur dont la cause est inconnue (division par zéro, protrusion de longueur nulle...), les valeurs qu'elle utilise, à vérifier.
+
+Dans l'arbre, la couleur d'une ligne indique son état :
+- **Rouge** : la ligne (cellule, propriété ou contrainte) est en erreur : erreur de cellule, expression qui échoue, valeur refusée par FreeCAD, objet invalide, contrainte d'esquisse refusée par le solveur.
+- **Rouge gras** : l'erreur part de cette ligne. Une ligne rouge sans gras tient son erreur d'une autre ligne, indiquée dans son infobulle.
+- **Orange** : dans la branche *Utilise* d'une ligne en erreur, la valeur qui provoque l'erreur, par exemple une cellule qui contient le texte `a` là où un nombre est attendu. Cette cellule n'est pas en erreur elle-même : elle n'est en orange que sous la ligne en erreur.
+- **Orange italique** : dans la branche *Utilise* d'une ligne en erreur, quand la macro ne sait pas quelle valeur est en cause (division par zéro, protrusion de longueur nulle...), toutes les valeurs utilisées ; l'une d'elles provoque l'erreur, il faut les vérifier une par une.
 
 L'infobulle de chaque ligne explique son état.
 
