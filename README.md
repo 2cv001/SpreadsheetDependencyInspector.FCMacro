@@ -8,7 +8,11 @@ The macro is multilingual, currently supporting English and French.
 The language used is the one you selected in your FreeCAD preferences.
 <img width="1416" height="557" alt="image" src="https://github.com/user-attachments/assets/4d265b1d-2757-4380-91d3-817adbda52ba" />
 
+*Cell selection as starting point: the cells Width, Height and Thickness.*
+
 <img width="1303" height="568" alt="image" src="https://github.com/user-attachments/assets/303adc6c-98ab-461e-9e4e-76dda915cc52" />
+
+*Object selection as starting point: the HolePattern object, selected in the FreeCAD tree.*
 
 
 
