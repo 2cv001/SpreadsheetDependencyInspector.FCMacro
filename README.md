@@ -6,7 +6,8 @@ The macro shows, as an expandable tree, the dependencies between spreadsheet cel
 
 The macro is multilingual, currently supporting English and French.
 The language used is the one you selected in your FreeCAD preferences.
-<img width="872" height="536" alt="image" src="https://github.com/user-attachments/assets/a840730c-19a2-40df-8f37-89d8a917a505" />
+<img width="1564" height="611" alt="image" src="https://github.com/user-attachments/assets/4b0be5d2-e20b-4d2a-afaa-185e242a795c" />
+
 
 
 **Examples of use:**
@@ -92,7 +93,8 @@ La macro affiche sous forme d'arbre dépliable les dépendances entre les cellul
 
 La macro est multilingue, pour l'instant anglais / français.
 La langue est celle que vous avez choisie dans les préférences de FreeCAD.
-<img width="868" height="540" alt="image" src="https://github.com/user-attachments/assets/133c5d25-64ae-4dc8-8332-8f2463e750e6" />
+<img width="1511" height="575" alt="image" src="https://github.com/user-attachments/assets/cfef8996-fa8e-4cdd-a6bc-13c11fd56619" />
+
 
 
 
