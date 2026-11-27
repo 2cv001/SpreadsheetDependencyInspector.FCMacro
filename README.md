@@ -103,6 +103,12 @@ La macro est multilingue, pour l'instant anglais / français.
 La langue est celle que vous avez choisie dans les préférences de FreeCAD.
 <img width="1511" height="575" alt="image" src="https://github.com/user-attachments/assets/cfef8996-fa8e-4cdd-a6bc-13c11fd56619" />
 
+*Sélection de cellules comme point de départ : les cellules Largeur, Hauteur et Epaisseur.*
+
+<img width="1303" height="568" alt="image" src="https://github.com/user-attachments/assets/303adc6c-98ab-461e-9e4e-76dda915cc52" />
+
+*Sélection d'un objet comme point de départ : l'objet HolePattern (RepetitionTrous dans l'exemple français), sélectionné dans l'arbre FreeCAD.*
+
 
 
 
