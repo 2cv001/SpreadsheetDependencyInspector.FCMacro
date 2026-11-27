@@ -8,7 +8,6 @@ The macro is multilingual, currently supporting English and French.
 The language used is the one you selected in your FreeCAD preferences.
 <img width="871" height="540" alt="image" src="https://github.com/user-attachments/assets/dcf05791-4f31-4486-ba7b-744acf0e1fb3" />
 
-
 **Usage:**
 
 Select the starting point, then run the macro:
@@ -50,7 +49,7 @@ La macro affiche sous forme d'arbre dépliable les dépendances entre les cellul
 
 La macro est multilingue, pour l'instant anglais / français.
 La langue est celle que vous avez choisie dans les préférences de FreeCAD.
-<img width="873" height="539" alt="image" src="https://github.com/user-attachments/assets/6edf10ff-9605-40e8-8e99-935128eaf8d9" />
+<img width="873" height="539" alt="image" src="https://github.com/user-attachments/assets/1719e6d9-e451-47e2-98c6-116357c05b4c" />
 
 
 **Mode d'utilisation :**
