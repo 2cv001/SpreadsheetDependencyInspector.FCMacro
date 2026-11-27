@@ -103,7 +103,8 @@ TRANSLATIONS = {
                       "contrainte sans expression) sont aussi affichés.",
         "show_names": "Noms",
         "show_labels_alias": "Label/alias",
-        "show_constraint_types": "Type",        "lines_shown": "Lignes",
+        "show_constraint_types": "Type",
+        "lines_shown": "Lignes",
         "hint_open_sketch": "Un double-clic sur une ligne montre la cellule dans son tableur, "
             "la propriété, ou la contrainte dans son esquisse (ouverte si besoin).\n"
             "Un double-clic sur une expression montre ce qu'elle utilise.\n"
@@ -216,8 +217,9 @@ TRANSLATIONS = {
                       "that uses nothing and that nothing uses, an empty cell, a constraint "
                       "without expression) are also shown.",
         "show_names": "Names",
-        "show_labels_alias": "label/alias",
-        "show_constraint_types": "type",        "middle_group": "Columns",
+        "show_labels_alias": "Label/alias",
+        "show_constraint_types": "Type",
+        "middle_group": "Columns",
         "dblclick_group": "Double-click",
         "dblclick_zoom": "Zoom on constraint",
         "hint_dblclick_zoom": "Checked: double-clicking a constraint also frames the 3D view on it "

@@ -1,0 +1,8 @@
+# Scripts qui construisent les projets d'exemple : gardés en local seulement
+exemples/*.py
+
+# Sauvegardes automatiques de FreeCAD
+*.FCBak
+
+# Cache Python
+__pycache__/

@@ -18,6 +18,8 @@ The language used is the one you selected in your FreeCAD preferences.
 - **Review and fix expressions, aliases and labels** without opening each object: show the Expression and Label/alias columns, then edit them with a single click in the tree.
 - **Get an overall view of the project**: select the document, at the top of the FreeCAD tree, to see all the dependencies.
 
+You can try these examples on the example project [Example_Bracket.FCStd](https://github.com/2cv001/SpreadsheetDependencyInspector.FCMacro/raw/main/exemples/Example_Bracket.FCStd), a drilled bracket driven by a spreadsheet, in the `exemples` folder. To see the errors, enter `a` in *Thickness*, or `1` in *HoleCount* (division by zero).
+
 **Usage:**
 
 Select the starting point of the analysis, then run the macro. This starting point can be:
@@ -102,6 +104,8 @@ La langue est celle que vous avez choisie dans les préférences de FreeCAD.
 - **Pourquoi mon projet ne se recalcule plus ?** Sélectionnez le document, lancez la macro et ne laissez cochée que *Erreurs* : vous voyez d'où part l'erreur et la valeur qui la provoque (voir *Utiliser la macro pour comprendre les erreurs du projet*).
 - **Relire et corriger les expressions, alias et labels** sans ouvrir chaque objet : affichez les colonnes Expression et Label/alias, puis modifiez-les d'un simple clic dans l'arbre.
 - **Avoir une vue d'ensemble du projet** : sélectionnez le document, tout en haut de l'arbre FreeCAD, pour voir toutes les dépendances.
+
+Vous pouvez essayer ces exemples sur le projet d'exemple [Exemple_Equerre.FCStd](https://github.com/2cv001/SpreadsheetDependencyInspector.FCMacro/raw/main/exemples/Exemple_Equerre.FCStd), une équerre percée pilotée par un tableur, dans le dossier `exemples`. Pour voir les erreurs, tapez `a` dans *Epaisseur*, ou `1` dans *NbTrous* (division par zéro).
 
 **Mode d'utilisation :**
 
