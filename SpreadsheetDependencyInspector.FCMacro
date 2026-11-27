@@ -9,7 +9,7 @@
 
 __Title__ = "Spreadsheet_Dependency_Inspector"
 __Author__ = "2cv001"
-__Date__ = "2026/11/27 11:59"  # YYYY/MM/DD
+__Date__ = "2026/11/27 18:34"  # YYYY/MM/DD
 __Version__ = __Date__
 __Comment__ = "The macro displays, for a selection of spreadsheet cells, all dependencies between spreadsheet cells and even between a cell and object properties."
 __Wiki__ = "https://wiki.freecad.org/Macro_Spreadsheet_Dependency_Inspector"
@@ -103,7 +103,8 @@ TRANSLATIONS = {
                       "contrainte sans expression) sont aussi affichés.",
         "show_names": "Noms",
         "show_labels_alias": "Label/alias",
-        "show_constraint_types": "Type",        "lines_shown": "Lignes",
+        "show_constraint_types": "Type",
+        "lines_shown": "Lignes",
         "hint_open_sketch": "Un double-clic sur une ligne montre la cellule dans son tableur, "
             "la propriété, ou la contrainte dans son esquisse (ouverte si besoin).\n"
             "Un double-clic sur une expression montre ce qu'elle utilise.\n"
@@ -216,8 +217,9 @@ TRANSLATIONS = {
                       "that uses nothing and that nothing uses, an empty cell, a constraint "
                       "without expression) are also shown.",
         "show_names": "Names",
-        "show_labels_alias": "label/alias",
-        "show_constraint_types": "type",        "middle_group": "Columns",
+        "show_labels_alias": "Label/alias",
+        "show_constraint_types": "Type",
+        "middle_group": "Columns",
         "dblclick_group": "Double-click",
         "dblclick_zoom": "Zoom on constraint",
         "hint_dblclick_zoom": "Checked: double-clicking a constraint also frames the 3D view on it "
@@ -3294,6 +3296,27 @@ def object_view_has_focus():
     return False
 
 
+def open_sheet_with_selected_cells():
+    # Le seul tableur ouvert du document actif dont des cellules sont sélectionnées, ou None
+    # (aucun, ou plusieurs : on ne sait pas lequel choisir). Sert quand la fenêtre active
+    # n'est pas le tableur alors que l'utilisateur y a sélectionné des cellules : tableur
+    # détaché dans sa propre fenêtre, vue 3D encore active juste après l'ouverture du fichier
+    found = []
+    try:
+        views = Gui.ActiveDocument.mdiViewsOfType("SpreadsheetGui::SheetView")
+    except Exception:  # volontaire : pas de document
+        return None
+    for view in views:
+        try:
+            sheet = view.getSheet()
+            if sheet.ViewObject.getView().selectedCells():
+                found.append(sheet)
+        except Exception as e:  # volontaire : vue en cours de fermeture...
+            print("Tableur ignoré :", e)
+    found = list(dict.fromkeys(found))
+    return found[0] if len(found) == 1 else None
+
+
 try:
     view = Gui.ActiveDocument.ActiveView
     sheet = view.getSheet()
@@ -3308,7 +3331,8 @@ except:
 #   active n'est pas un tableur (ex : vue 3D) et des propriétés y sont sélectionnées
 # - sinon des objets : le focus est dans l'arbre FreeCAD ou une vue 3D, ou la fenêtre
 #   active n'est pas un tableur ; le document sélectionné en haut de l'arbre = tout le document
-# - sinon les cellules sélectionnées dans le tableur actif
+# - sinon les cellules sélectionnées dans le tableur actif, ou à défaut dans le seul
+#   tableur ouvert qui a des cellules sélectionnées
 # - rien de tout cela : fenêtre d'aide
 root_properties = None
 root_objects = None
@@ -3320,6 +3344,11 @@ if Gui.ActiveDocument is not None:
         root_properties = current_selected_properties()
     if root_properties is None and (sheet is None or object_view_has_focus()):
         root_objects = current_selected_objects()
+
+# Aucun autre point de départ et la fenêtre active n'est pas un tableur : les cellules
+# sélectionnées dans un tableur ouvert (ex : tableur détaché dans sa propre fenêtre)
+if sheet is None and root_properties is None and root_objects is None:
+    sheet = open_sheet_with_selected_cells()
 
 if root_objects is not None:
     dlg = RefDialog2(sheet, root_objects=root_objects)

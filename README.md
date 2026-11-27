@@ -6,7 +6,8 @@ The macro shows, as an expandable tree, the dependencies between spreadsheet cel
 
 The macro is multilingual, currently supporting English and French.
 The language used is the one you selected in your FreeCAD preferences.
-<img width="872" height="536" alt="image" src="https://github.com/user-attachments/assets/a840730c-19a2-40df-8f37-89d8a917a505" />
+<img width="1564" height="611" alt="image" src="https://github.com/user-attachments/assets/4b0be5d2-e20b-4d2a-afaa-185e242a795c" />
+
 
 
 **Examples of use:**
@@ -17,6 +18,8 @@ The language used is the one you selected in your FreeCAD preferences.
 - **Why does my project no longer recompute?** Select the document, run the macro and keep only *Errors* checked: you see where the error starts and the value that causes it (see *Using the macro to understand the errors of the project*).
 - **Review and fix expressions, aliases and labels** without opening each object: show the Expression and Label/alias columns, then edit them with a single click in the tree.
 - **Get an overall view of the project**: select the document, at the top of the FreeCAD tree, to see all the dependencies.
+
+You can try these examples on the example project [Example_Bracket.FCStd](https://github.com/2cv001/SpreadsheetDependencyInspector.FCMacro/raw/main/exemples/Example_Bracket.FCStd), a drilled bracket driven by a spreadsheet, in the `exemples` folder. To see the errors, enter `a` in *Thickness*, or `1` in *HoleCount* (division by zero).
 
 **Usage:**
 
@@ -90,7 +93,8 @@ La macro affiche sous forme d'arbre dépliable les dépendances entre les cellul
 
 La macro est multilingue, pour l'instant anglais / français.
 La langue est celle que vous avez choisie dans les préférences de FreeCAD.
-<img width="868" height="540" alt="image" src="https://github.com/user-attachments/assets/133c5d25-64ae-4dc8-8332-8f2463e750e6" />
+<img width="1511" height="575" alt="image" src="https://github.com/user-attachments/assets/cfef8996-fa8e-4cdd-a6bc-13c11fd56619" />
+
 
 
 
@@ -102,6 +106,8 @@ La langue est celle que vous avez choisie dans les préférences de FreeCAD.
 - **Pourquoi mon projet ne se recalcule plus ?** Sélectionnez le document, lancez la macro et ne laissez cochée que *Erreurs* : vous voyez d'où part l'erreur et la valeur qui la provoque (voir *Utiliser la macro pour comprendre les erreurs du projet*).
 - **Relire et corriger les expressions, alias et labels** sans ouvrir chaque objet : affichez les colonnes Expression et Label/alias, puis modifiez-les d'un simple clic dans l'arbre.
 - **Avoir une vue d'ensemble du projet** : sélectionnez le document, tout en haut de l'arbre FreeCAD, pour voir toutes les dépendances.
+
+Vous pouvez essayer ces exemples sur le projet d'exemple [Exemple_Equerre.FCStd](https://github.com/2cv001/SpreadsheetDependencyInspector.FCMacro/raw/main/exemples/Exemple_Equerre.FCStd), une équerre percée pilotée par un tableur, dans le dossier `exemples`. Pour voir les erreurs, tapez `a` dans *Epaisseur*, ou `1` dans *NbTrous* (division par zéro).
 
 **Mode d'utilisation :**
 
