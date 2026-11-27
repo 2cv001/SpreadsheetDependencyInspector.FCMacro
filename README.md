@@ -9,6 +9,15 @@ The language used is the one you selected in your FreeCAD preferences.
 <img width="872" height="536" alt="image" src="https://github.com/user-attachments/assets/a840730c-19a2-40df-8f37-89d8a917a505" />
 
 
+**Examples of use:**
+- **What depends on this cell?** Select the cell (e.g. `Width`) and run the macro: the *Used by* branch shows all the cells, properties and constraints that depend on it, directly or in cascade. Useful before changing or deleting a cell.
+- **Is this cell still used?** Select it and run the macro: if it has no *Used by* branch, nothing uses it.
+- **What drives this line of my sketch?** Open the sketch, select the line (or a circle, a point) and run the macro: all its constraints are selected in green in the sketch, and the tree shows which cells their values depend on.
+- **Where is the constraint linked to this cell?** In the tree, double-click the constraint: the sketch opens, the constraint is selected in it and, with *Zoom on constraint*, the view frames it.
+- **Why does my project no longer recompute?** Select the document, run the macro and keep only *Errors* checked: you see where the error starts and the value that causes it (see *Using the macro to understand the errors of the project*).
+- **Review and fix expressions, aliases and labels** without opening each object: show the Expression and Label/alias columns, then edit them with a single click in the tree.
+- **Get an overall view of the project**: select the document, at the top of the FreeCAD tree, to see all the dependencies.
+
 **Usage:**
 
 Select the starting point of the analysis, then run the macro. This starting point can be:
@@ -84,6 +93,15 @@ La langue est celle que vous avez choisie dans les préférences de FreeCAD.
 <img width="868" height="540" alt="image" src="https://github.com/user-attachments/assets/133c5d25-64ae-4dc8-8332-8f2463e750e6" />
 
 
+
+**Exemples d'utilisation :**
+- **Qu'est-ce qui dépend de cette cellule ?** Sélectionnez la cellule (ex : `Largeur`) et lancez la macro : la branche *Est utilisé par* montre toutes les cellules, propriétés et contraintes qui en dépendent, directement ou en cascade. Utile avant de modifier ou de supprimer une cellule.
+- **Cette cellule sert-elle encore ?** Sélectionnez-la et lancez la macro : si elle n'a pas de branche *Est utilisé par*, rien ne l'utilise.
+- **Qu'est-ce qui pilote cette ligne de mon esquisse ?** Ouvrez l'esquisse, sélectionnez la ligne (ou un cercle, un point) et lancez la macro : toutes ses contraintes sont sélectionnées en vert dans l'esquisse, et l'arbre montre de quelles cellules dépendent leurs valeurs.
+- **Où est la contrainte liée à cette cellule ?** Dans l'arbre, double-cliquez sur la contrainte : l'esquisse s'ouvre, la contrainte y est sélectionnée et, avec *Zoom sur contrainte*, la vue la cadre.
+- **Pourquoi mon projet ne se recalcule plus ?** Sélectionnez le document, lancez la macro et ne laissez cochée que *Erreurs* : vous voyez d'où part l'erreur et la valeur qui la provoque (voir *Utiliser la macro pour comprendre les erreurs du projet*).
+- **Relire et corriger les expressions, alias et labels** sans ouvrir chaque objet : affichez les colonnes Expression et Label/alias, puis modifiez-les d'un simple clic dans l'arbre.
+- **Avoir une vue d'ensemble du projet** : sélectionnez le document, tout en haut de l'arbre FreeCAD, pour voir toutes les dépendances.
 
 **Mode d'utilisation :**
 
