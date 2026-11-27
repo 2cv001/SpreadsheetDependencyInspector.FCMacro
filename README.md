@@ -56,6 +56,18 @@ When a recompute fails (object marked with an exclamation mark, a Pad that no lo
 5. **Fix**: in FreeCAD as usual (spreadsheet, property view, sketch), or directly in the tree of the macro (Expression column). If you make the change in the tree of the macro and it results in a FreeCAD error, the macro warns you and offers to cancel the change.
 6. **Check**: click the refresh button. When no line is red any more, the errors are solved.
 
+**See also:** as a complement to this macro, [Macro Sketch Constraint From Spreadsheet](https://wiki.freecad.org/Macro_Sketch_Constraint_From_Spreadsheet).
+
+**Download:** [latest version of the macro](https://raw.githubusercontent.com/2cv001/SpreadsheetDependencyInspector.FCMacro/main/SpreadsheetDependencyInspector.FCMacro), [toolbar icon](https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png).
+
+**Forum discussions:**
+- In English: https://forum.freecad.org/viewtopic.php?t=105015
+- In French: https://forum.freecad.org/viewtopic.php?t=104883
+
+**Credits:**
+- Thanks to L'ami René for tests, ideas, the icon and the example project!
+- Thanks to flachyjoe for the insightful comments on the ergonomics.
+
 
 **Français**
 
@@ -115,3 +127,15 @@ Quand un recalcul échoue (objet marqué d'un point d'exclamation, protrusion qu
 4. **Aller à la source** : double-cliquez sur la ligne en orange ou en rouge gras pour ouvrir la cellule dans son tableur, la propriété, ou la contrainte dans son esquisse. Si *Zoom sur contrainte* est cochée, la vue cadre la contrainte dans son environnement. Un double-clic sur l'expression d'une ligne sélectionne ce qu'elle utilise.
 5. **Corriger** : dans FreeCAD comme d'habitude (tableur, fenêtre des propriétés, esquisse), ou directement dans l'arbre de la macro (colonne Expression). Si vous faites la modification dans l'arbre de la macro et qu'il en résulte une erreur FreeCAD, la macro vous prévient et vous propose d'annuler la modification.
 6. **Vérifier** : cliquez sur le bouton refresh. Quand plus aucune ligne n'est rouge, les erreurs sont résolues.
+
+**Voir aussi :** en complément de cette macro, [Macro Sketch Constraint From Spreadsheet](https://wiki.freecad.org/Macro_Sketch_Constraint_From_Spreadsheet).
+
+**Téléchargement :** [dernière version de la macro](https://raw.githubusercontent.com/2cv001/SpreadsheetDependencyInspector.FCMacro/main/SpreadsheetDependencyInspector.FCMacro), [icône pour la barre d'outils](https://wiki.freecad.org/images/8/86/SpreadsheetDependencyInspector.png).
+
+**Discussions sur le forum :**
+- En anglais : https://forum.freecad.org/viewtopic.php?t=105015
+- En français : https://forum.freecad.org/viewtopic.php?t=104883
+
+**Remerciements :**
+- Merci à L'ami René pour les tests, les idées, l'icône et le projet d'exemple !
+- Merci à flachyjoe pour ses remarques pertinentes sur l'ergonomie.
