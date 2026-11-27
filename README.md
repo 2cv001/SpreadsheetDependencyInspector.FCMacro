@@ -43,6 +43,19 @@ The tooltip of each line explains its state.
 The refresh button <img width="36" height="30" alt="image" src="https://github.com/user-attachments/assets/dcc1fc5e-25ed-461c-87eb-7176b053d575" /> re-runs the analysis, for example after you modify a cell. It starts again from what you selected last (cells, property, objects or document).
 The expand/collapse buttons and the level counter expand or collapse the whole tree. You can also do it branch by branch by clicking on the ▶ or ▼ symbols. Checking or unchecking a box keeps the level shown.
 
+**Using the macro to understand the errors of the project:**
+
+When a recompute fails (object marked with an exclamation mark, a Pad that no longer builds, a sketch that no longer solves), the macro helps you go back to the cause:
+
+1. **List the errors**: select the document at the top of the FreeCAD tree, run the macro, then keep only *Errors* checked in the *Lines* panel. Only the lines in error and their causes remain.
+2. **Find where the error starts**: a **bold red** line is the origin of an error: it is the one FreeCAD reports. A red line without bold only inherits it, and its tooltip says from which line. Start with the bold lines: one origin often explains all the others. For example, a Pad in error because its sketch no longer solves says in its tooltip that the error comes from the sketch.
+3. **Read the cause**: the tooltip of the line in error gives the message (cell error, expression that fails, value refused by FreeCAD, constraint refused by the solver as conflicting, redundant or malformed...). In its *Uses* branch, some lines may appear:
+   - in **orange**: the value that causes the error, e.g. a cell containing text where a number is expected;
+   - in **orange italic**: when the macro does not know which value is involved (division by zero, length zero...), it shows all the values used; one of them causes the error, check them one by one.
+4. **Go to the source**: double-click the orange or bold red line to open the cell in its spreadsheet, the property, or the constraint in its sketch. If *Zoom on constraint* is checked, the view frames the constraint in its surroundings. Double-clicking the expression of a line selects what it uses.
+5. **Fix**: in FreeCAD as usual (spreadsheet, property view, sketch), or directly in the tree of the macro (Expression column). If you make the change in the tree of the macro and it results in a FreeCAD error, the macro warns you and offers to cancel the change.
+6. **Check**: click the refresh button. When no line is red any more, the errors are solved.
+
 
 **Français**
 
@@ -89,3 +102,16 @@ L'infobulle de chaque ligne explique son état.
 
 Le bouton refresh <img width="36" height="30" alt="image" src="https://github.com/user-attachments/assets/131cef95-d078-475c-a95c-97890e5dc68f" /> relance l'analyse, par exemple après la modification d'une cellule. Il repart de ce que vous avez sélectionné en dernier (cellules, propriété, objets ou document).
 Les boutons déplier / replier et le compteur de niveau déplient ou replient tout l'arbre. Il est aussi possible de le faire branche par branche en cliquant sur les ▶ ou ▼. Cocher ou décocher une case garde le niveau affiché.
+
+**Utiliser la macro pour comprendre les erreurs du projet :**
+
+Quand un recalcul échoue (objet marqué d'un point d'exclamation, protrusion qui ne se construit plus, esquisse qui ne se résout plus), la macro aide à remonter jusqu'à la cause :
+
+1. **Faire le tour des erreurs** : sélectionnez le document tout en haut de l'arbre FreeCAD, lancez la macro, puis ne laissez cochée que *Erreurs* dans le panneau *Lignes*. Seules restent les lignes en erreur et leurs causes.
+2. **Trouver d'où part l'erreur** : une ligne en **rouge gras** est l'origine d'une erreur : c'est elle que signale FreeCAD. Une ligne rouge sans gras ne fait qu'en hériter, et son infobulle indique de quelle ligne. Commencez par les lignes en gras : une seule origine explique souvent toutes les autres. Par exemple, une protrusion en erreur parce que son esquisse ne se résout plus indique dans son infobulle que l'erreur vient de l'esquisse.
+3. **Lire la cause** : l'infobulle de la ligne en erreur donne le message (erreur de cellule, expression qui échoue, valeur refusée par FreeCAD, contrainte refusée par le solveur car en conflit, redondante ou mal formée...). Dans sa branche *Utilise*, certaines lignes peuvent apparaître :
+   - en **orange** : la valeur qui provoque l'erreur, par exemple une cellule qui contient du texte là où un nombre est attendu ;
+   - en **orange italique** : quand la macro ne sait pas quelle valeur est en cause (division par zéro, longueur nulle...), elle affiche toutes les valeurs utilisées ; l'une d'elles provoque l'erreur, il faut les vérifier une par une.
+4. **Aller à la source** : double-cliquez sur la ligne en orange ou en rouge gras pour ouvrir la cellule dans son tableur, la propriété, ou la contrainte dans son esquisse. Si *Zoom sur contrainte* est cochée, la vue cadre la contrainte dans son environnement. Un double-clic sur l'expression d'une ligne sélectionne ce qu'elle utilise.
+5. **Corriger** : dans FreeCAD comme d'habitude (tableur, fenêtre des propriétés, esquisse), ou directement dans l'arbre de la macro (colonne Expression). Si vous faites la modification dans l'arbre de la macro et qu'il en résulte une erreur FreeCAD, la macro vous prévient et vous propose d'annuler la modification.
+6. **Vérifier** : cliquez sur le bouton refresh. Quand plus aucune ligne n'est rouge, les erreurs sont résolues.
