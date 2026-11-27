@@ -92,6 +92,10 @@ TRANSLATIONS = {
         "filter_errors": "Erreurs",
         "hint_errors": "Cochée : les lignes en erreur (en rouge) sont toujours affichées, "
                        "même si les autres cases les masqueraient.",
+        "filter_empty": "Vide",
+        "hint_empty": "Cochée : les points de départ sélectionnés sans aucun lien (ex : une "
+                      "cellule que rien n'utilise et qui n'utilise rien, une cellule vide, une "
+                      "contrainte sans expression) sont aussi affichés.",
         "show_names": "Noms",
         "show_labels_alias": "Label/alias",
         "show_constraint_types": "Type",        "lines_shown": "Lignes",
@@ -201,6 +205,10 @@ TRANSLATIONS = {
         "filter_errors": "Errors",
         "hint_errors": "Checked: the lines in error (in red) are always shown, "
                        "even if the other boxes would hide them.",
+        "filter_empty": "Empty",
+        "hint_empty": "Checked: the selected starting points without any link (e.g. a cell "
+                      "that uses nothing and that nothing uses, an empty cell, a constraint "
+                      "without expression) are also shown.",
         "show_names": "Names",
         "show_labels_alias": "label/alias",
         "show_constraint_types": "type",        "middle_group": "Columns",
@@ -558,6 +566,50 @@ def traiter_feuille(sheet, graph, label_to_name, alias_map):
 
                     graph[cell_ref]["parents"].add(norm)
                     graph[norm]["children"].add(cell_ref)
+
+
+def add_empty_node(graph, ref):
+    # Nœud sans lien pour un point de départ absent du graphe (cellule vide, propriété ou
+    # contrainte sans expression que rien n'utilise), pour l'afficher avec la case Vide.
+    # Retourne False si ref ne désigne ni une cellule ni une propriété existante
+    doc = App.ActiveDocument
+    obj_name, _, path = ref.partition(".")
+    obj = doc.getObject(obj_name) if doc is not None else None
+    if obj is None or not path:
+        return False
+    if obj.TypeId == "Spreadsheet::Sheet":
+        if not re.fullmatch(r"[A-Z]{1,3}\d+", path):
+            return False
+        create_or_update_node(graph, ref, kind="cell", sheet_name=obj.Name, cell_name=path)
+        try:
+            alias = obj.getAlias(path)
+        except Exception:  # volontaire : pas d'alias
+            alias = None
+        graph[ref]["alias"] = alias
+        graph[ref]["label"] = alias or path
+        try:
+            graph[ref]["value"] = obj.get(path)
+        except Exception:  # volontaire : cellule vide
+            pass
+    else:
+        try:
+            value = getPropertyValue(obj, path)
+        except Exception:  # volontaire : propriété ou contrainte inexistante
+            return False
+        create_or_update_node(graph, ref, kind="property", obj_name=obj.Name, prop_name=path)
+        graph[ref]["label"] = obj.Label
+        if path.startswith("Constraints") and hasattr(value, "Type") and hasattr(value, "Value"):
+            graph[ref]["constraint_type"] = value.Type
+            value = value.Value
+        graph[ref]["value"] = value
+    graph[ref]["error_origins"] = set()
+    graph[ref]["added_empty"] = True
+    return True
+
+
+def has_links(node):
+    # la ligne utilise quelque chose ou est utilisée
+    return bool(node["parents"] or node["children"])
 
 
 # ===============================================================================
@@ -1302,8 +1354,11 @@ class RefDialog2(QtGui.QDialog):
         top_line = QtGui.QHBoxLayout()
 
 
-        modes_box = QtGui.QVBoxLayout()
-        modes_box.setSpacing(0)
+        # deux colonnes : branches et états (Utilise, Est utilisé par, Erreurs, Vide),
+        # types de lignes (Cellules, Contraintes, Autres)
+        modes_box = QtGui.QGridLayout()
+        modes_box.setVerticalSpacing(0)
+        modes_box.setHorizontalSpacing(12)
         modes_box.setContentsMargins(0, 0, 0, 0)
 
         group_lines = QtGui.QGroupBox(tr("lines_shown"))
@@ -1318,8 +1373,8 @@ class RefDialog2(QtGui.QDialog):
         self.cb_in.setChecked(True)
         self.cb_in.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
 
-        modes_box.addWidget(self.cb_out)
-        modes_box.addWidget(self.cb_in)
+        modes_box.addWidget(self.cb_out, 0, 0)
+        modes_box.addWidget(self.cb_in, 1, 0)
 
         self.filter_cells = QtGui.QCheckBox(tr("filter_cells"))
         self.filter_cells.setChecked(True)
@@ -1334,20 +1389,27 @@ class RefDialog2(QtGui.QDialog):
         self.filter_others.setChecked(True)
         self.filter_others.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
 
-        modes_box.addWidget(self.filter_cells)
-        modes_box.addWidget(self.filter_constraints)
-        modes_box.addWidget(self.filter_others)
+        modes_box.addWidget(self.filter_cells, 0, 1)
+        modes_box.addWidget(self.filter_constraints, 1, 1)
+        modes_box.addWidget(self.filter_others, 2, 1)
 
         self.filter_errors = QtGui.QCheckBox(tr("filter_errors"))
         self.filter_errors.setChecked(True)
         self.filter_errors.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
         self.filter_errors.setToolTip(tr("hint_errors"))
-        modes_box.addWidget(self.filter_errors)
+        modes_box.addWidget(self.filter_errors, 2, 0)
+
+        self.filter_empty = QtGui.QCheckBox(tr("filter_empty"))
+        self.filter_empty.setChecked(False)
+        self.filter_empty.setStyleSheet("QCheckBox { padding: 0px; margin: 0px; }")
+        self.filter_empty.setToolTip(tr("hint_empty"))
+        modes_box.addWidget(self.filter_empty, 3, 0)
 
         self.filter_cells.toggled.connect(self.on_change_coche)
         self.filter_constraints.toggled.connect(self.on_change_coche)
         self.filter_others.toggled.connect(self.on_change_coche)
         self.filter_errors.toggled.connect(self.on_change_coche)
+        self.filter_empty.toggled.connect(self.on_change_coche)
 
         top_line.addWidget(group_lines)
         top_line.addSpacing(5)
@@ -1619,6 +1681,7 @@ class RefDialog2(QtGui.QDialog):
         self.filter_constraints.setChecked(ui.getboolean("filter_constraints", True))
         self.filter_others.setChecked(ui.getboolean("filter_others", True))
         self.filter_errors.setChecked(ui.getboolean("filter_errors", True))
+        self.filter_empty.setChecked(ui.getboolean("filter_empty", False))
 
         # --- Cases à cocher existantes ---
         self.show_formula.setChecked(ui.getboolean("show_formula", False))
@@ -1702,6 +1765,7 @@ class RefDialog2(QtGui.QDialog):
         config["UI"]["filter_constraints"] = str(self.filter_constraints.isChecked())
         config["UI"]["filter_others"] = str(self.filter_others.isChecked())
         config["UI"]["filter_errors"] = str(self.filter_errors.isChecked())
+        config["UI"]["filter_empty"] = str(self.filter_empty.isChecked())
 
         # --- Cases à cocher existantes ---
         config["UI"]["show_formula"] = str(self.show_formula.isChecked())
@@ -1927,7 +1991,19 @@ class RefDialog2(QtGui.QDialog):
         self.graph = build_graph()  # la propriété ou ses liens ont pu changer
         self.setWindowTitle(f"{tr('title')} – {self.title_target()}")
         self.tree.clear()
-        return [ref for ref in self.root_properties if ref in self.graph]
+        return [ref for ref in self.root_properties if self.root_in_graph(ref)]
+
+    # --------------------------------------------------------
+    # Point de départ dans le graphe ; absent (cellule vide, contrainte sans expression…) :
+    # ajouté sans lien si la case Vide est cochée
+    # --------------------------------------------------------
+    def root_in_graph(self, ref):
+        node = self.graph.get(ref)
+        if node is not None and not node.get("added_empty"):
+            return True
+        if not self.filter_empty.isChecked():  # nœud ajouté plus tôt : plus affiché
+            return False
+        return node is not None or add_empty_node(self.graph, ref)
 
     # --------------------------------------------------------
     # Point de départ = les cellules sélectionnées dans la feuille
@@ -1988,7 +2064,7 @@ class RefDialog2(QtGui.QDialog):
         return [
             f"{self.sheet.Name}.{a}"
             for a in addrs
-            if f"{self.sheet.Name}.{a}" in self.graph
+            if self.root_in_graph(f"{self.sheet.Name}.{a}")
         ]
 
     # --- Fonctions de catégorisation ---
@@ -2237,8 +2313,10 @@ class RefDialog2(QtGui.QDialog):
             # ------------------------------------------------------------
             root_visible = False
 
-            # 2a) Si la racine correspond directement à un filtre → visible
-            root_visible = self.matches_filters(self.graph[root])
+            # 2a) Si la racine correspond directement à un filtre → visible ;
+            #     sans aucun lien : aussi si la case Vide est cochée
+            root_visible = (self.matches_filters(self.graph[root])
+                            or (self.filter_empty.isChecked() and not has_links(self.graph[root])))
 
             # 2b) Sinon : tester les branches Uses et Used by
             if not root_visible and self.cb_out.isChecked():
@@ -3146,7 +3224,7 @@ if root_objects is not None:
         dlg.deleteLater()  # fenêtre non affichée : arrêter son minuteur
 elif root_properties is not None:
     dlg = RefDialog2(sheet, root_properties)
-    if any(ref in dlg.graph for ref in root_properties):
+    if any(dlg.root_in_graph(ref) for ref in root_properties):
         QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
         dlg.show()
     else:

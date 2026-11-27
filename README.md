@@ -21,6 +21,7 @@ Select the starting point, then run the macro:
 - *Uses* / *Used by*: the two branches of each line.
 - *Cells*, *Constraints*, *Others*: the kinds of lines shown.
 - *Errors*: when checked, the lines in error are always shown, with what they use. When unchecked, it does not prevent the lines in error from being shown. With *Errors* alone, you only see the errors and their causes.
+- *Empty*: when checked, the selected starting points without any link are also shown (e.g. a cell that uses nothing and that nothing uses, an empty cell, a constraint without expression). The lines with links are shown as usual.
 
 **Columns:** Label/alias, Expression, Result and constraint Type can be shown or hidden.
 
@@ -63,6 +64,7 @@ Sélectionnez le point de départ, puis lancez la macro :
 - *Utilise* / *Est utilisé par* : les deux branches de chaque ligne.
 - *Cellules*, *Contraintes*, *Autres* : les types de lignes affichées.
 - *Erreurs* : cochée, les lignes en erreur sont toujours affichées, avec ce qu'elles utilisent. Décochée, elle n'empêche pas pour autant d'afficher les lignes en erreur. Avec *Erreurs* seule, on ne voit que les erreurs et leurs causes.
+- *Vide* : cochée, les points de départ sélectionnés sans aucun lien sont aussi affichés (ex : une cellule qui n'utilise rien et que rien n'utilise, une cellule vide, une contrainte sans expression). Les lignes qui ont des liens restent affichées comme d'habitude.
 
 **Colonnes :** Label/alias, Expression, Résultat et Type de contrainte peuvent être affichés ou masqués.
 
