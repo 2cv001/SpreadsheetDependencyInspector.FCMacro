@@ -84,6 +84,11 @@ TRANSLATIONS = {
 
         # Cases à cocher
         "middle_group": "Colonnes",
+        "dblclick_group": "Double-clic",
+        "dblclick_zoom": "Zoom sur contrainte",
+        "hint_dblclick_zoom": "Cochée : le double-clic sur une contrainte cadre aussi la vue 3D sur "
+                              "elle (éléments qu'elle relie et sa cote), sur environ 1/3 de la "
+                              "fenêtre pour voir autour. Décochée : la vue ne bouge pas.",
         "show_formula": "Expression",
         "show_value": "Résultat",
         "filter_cells": "Cellules",
@@ -99,9 +104,10 @@ TRANSLATIONS = {
         "show_names": "Noms",
         "show_labels_alias": "Label/alias",
         "show_constraint_types": "Type",        "lines_shown": "Lignes",
-        "hint_open_sketch": "Double clic : sur une ligne, ouvre la cellule, la propriété ou la contrainte "
-            "(esquisse ouverte) ; dans la colonne Expression, sélectionne les termes de l'expression. "
-            "Simple clic pour éditer un Label/Alias ou une expression.",
+        "hint_open_sketch": "Un double-clic sur une ligne montre la cellule dans son tableur, "
+            "la propriété, ou la contrainte dans son esquisse (ouverte si besoin).\n"
+            "Un double-clic sur une expression montre ce qu'elle utilise.\n"
+            "Un simple clic sur un Label/alias ou une expression permet de le modifier.",
 
         # Sections arbre
         "uses": "Utilise",
@@ -212,9 +218,15 @@ TRANSLATIONS = {
         "show_names": "Names",
         "show_labels_alias": "label/alias",
         "show_constraint_types": "type",        "middle_group": "Columns",
-        "hint_open_sketch": "Double-click: on a row, opens the cell, the property or the constraint "
-            "(sketch opened); in the Expression column, selects the terms of the expression. "
-            "Simple click to edit a Label/Alias or an expression.",
+        "dblclick_group": "Double-click",
+        "dblclick_zoom": "Zoom on constraint",
+        "hint_dblclick_zoom": "Checked: double-clicking a constraint also frames the 3D view on it "
+                              "(the elements it links and its dimension), on about 1/3 of the "
+                              "window to see around. Unchecked: the view does not move.",
+        "hint_open_sketch": "A double-click on a row shows the cell in its spreadsheet, "
+            "the property, or the constraint in its sketch (opened if needed).\n"
+            "A double-click on an expression shows what it uses.\n"
+            "A single click on a Label/alias or an expression lets you edit it.",
 
         # Sections arbre
         "uses": "Uses",
@@ -1434,11 +1446,6 @@ class RefDialog2(QtGui.QDialog):
         middle_box.addWidget(self.show_value)
         middle_box.addWidget(self.show_constraint_types)
 
-        help_label = QtGui.QLabel(tr("hint_open_sketch"))
-        help_label.setWordWrap(True)
-        help_label.setStyleSheet("color: gray; font-style: italic;")
-        middle_box.addWidget(help_label)
-
         self.show_labels_alias.stateChanged.connect(self.recompute)
         self.show_constraint_types.stateChanged.connect(self.recompute)
 
@@ -1473,6 +1480,29 @@ class RefDialog2(QtGui.QDialog):
         right_box.addWidget(self.btn_collapse_all)
 
         top_line.addWidget(group_middle)
+        top_line.addSpacing(5)
+
+        # ============================================================
+        #  Panneau Double-clic : ce que fait le double-clic dans FreeCAD
+        # ============================================================
+        group_dblclick = QtGui.QGroupBox(tr("dblclick_group"))
+        dblclick_box = QtGui.QVBoxLayout()
+        dblclick_box.setSpacing(0)
+        dblclick_box.setContentsMargins(0, 0, 5, 0)
+        dblclick_box.setAlignment(QtCore.Qt.AlignTop)
+        group_dblclick.setLayout(dblclick_box)
+
+        self.dblclick_zoom = QtGui.QCheckBox(tr("dblclick_zoom"))
+        self.dblclick_zoom.setChecked(False)
+        self.dblclick_zoom.setToolTip(tr("hint_dblclick_zoom"))
+        dblclick_box.addWidget(self.dblclick_zoom)
+
+        help_label = QtGui.QLabel(tr("hint_open_sketch"))
+        help_label.setWordWrap(True)
+        help_label.setStyleSheet("color: gray; font-style: italic;")
+        dblclick_box.addWidget(help_label)
+
+        top_line.addWidget(group_dblclick)
         top_line.addSpacing(5)
         top_line.addLayout(right_box)
 
@@ -1688,6 +1718,7 @@ class RefDialog2(QtGui.QDialog):
         self.show_value.setChecked(ui.getboolean("show_value", False))
         self.show_labels_alias.setChecked(ui.getboolean("show_labels_alias", False))
         self.show_constraint_types.setChecked(ui.getboolean("show_constraint_types", False))
+        self.dblclick_zoom.setChecked(ui.getboolean("dblclick_zoom", False))
         # --- Taille ---
         w = ui.getint("width", 600)
         h = ui.getint("height", 400)
@@ -1772,6 +1803,7 @@ class RefDialog2(QtGui.QDialog):
         config["UI"]["show_value"] = str(self.show_value.isChecked())
         config["UI"]["show_labels_alias"] = str(self.show_labels_alias.isChecked())
         config["UI"]["show_constraint_types"] = str(self.show_constraint_types.isChecked())
+        config["UI"]["dblclick_zoom"] = str(self.dblclick_zoom.isChecked())
         # --- Taille ---
         size = self.size()
         config["UI"]["width"] = str(size.width())
@@ -2599,6 +2631,11 @@ class RefDialog2(QtGui.QDialog):
         # panneau Tâches ouvert (setEdit) et la sélection reportée dans la liste
         QtCore.QTimer.singleShot(300, show_selected_constraint_in_task_list)
 
+        # Case Zoom : cadrer la vue sur la contrainte, une fois l'esquisse ouverte (FreeCAD
+        # oriente alors la vue face à l'esquisse, parfois avec une animation)
+        if self.dblclick_zoom.isChecked():
+            QtCore.QTimer.singleShot(600, lambda: zoom_on_constraint(sketch, constraint_index))
+
     # ---------------------------------------------------------
     # Sélectionne des propriétés (liste de (objet, chemin)) : les objets dans l'arbre
     # FreeCAD, et s'il n'y en a qu'un, la propriété dans la fenêtre des propriétés,
@@ -3081,6 +3118,80 @@ def current_selected_constraints(select=False):
         path = expression_paths.get(index) or (f"Constraints.{name}" if name else f"Constraints[{index}]")
         refs.append(sketch.Name + "." + path)
     return tuple(refs)
+
+
+def constraint_bound_box(sketch, index):
+    # Boîte englobante, dans le repère global, des éléments que relie la contrainte :
+    # le point (extrémité, centre) quand la contrainte porte sur un point, sinon toute la
+    # géométrie ; les axes H/V et l'origine sont ignorés. None si rien n'est trouvé
+    c = sketch.Constraints[index]
+    local_points = []
+    for geo, pos in ((c.First, c.FirstPos), (c.Second, c.SecondPos), (c.Third, c.ThirdPos)):
+        if geo == GEO_UNDEF or geo in (-1, -2):
+            continue
+        try:
+            if pos:
+                local_points.append(sketch.getPoint(geo, pos))
+                continue
+            geometry = sketch.Geometry[geo] if geo >= 0 else sketch.ExternalGeo[-geo - 1]
+            bb = geometry.toShape().BoundBox
+        except Exception as e:  # volontaire : géométrie introuvable, on l'ignore
+            print("Géométrie de la contrainte non trouvée :", sketch.Name, index, geo, pos, e)
+            continue
+        for x in (bb.XMin, bb.XMax):
+            for y in (bb.YMin, bb.YMax):
+                local_points.append(App.Vector(x, y, 0))
+    if not local_points:
+        return None
+    # la cote elle-même (traits, texte), pour les contraintes qui en ont une : décalée de
+    # LabelDistance par rapport à ce qu'elle mesure (rayon, angle : LabelPosition est un
+    # angle) et, pour une distance, glissée de LabelPosition le long de la cote ; la
+    # direction dépend de la contrainte : la zone est agrandie de tous côtés
+    distance = abs(getattr(c, "LabelDistance", 0) or 0)
+    if c.Type in ("Distance", "DistanceX", "DistanceY"):
+        label = distance + abs(getattr(c, "LabelPosition", 0) or 0)
+    elif c.Type in ("Radius", "Diameter", "Angle"):
+        label = distance
+    else:  # coïncidence, perpendicularité… : un simple symbole
+        label = 0
+    if label:
+        xs = [p.x for p in local_points]
+        ys = [p.y for p in local_points]
+        local_points += [App.Vector(min(xs) - label, min(ys) - label, 0),
+                         App.Vector(max(xs) + label, max(ys) + label, 0)]
+    placement = sketch.getGlobalPlacement() if hasattr(sketch, "getGlobalPlacement") else sketch.Placement
+    box = App.BoundBox()
+    for p in local_points:
+        box.add(placement.multVec(p))
+    return box
+
+
+def zoom_on_constraint(sketch, index):
+    # Cadre la vue 3D active sur la contrainte, sans changer l'orientation de la vue
+    try:
+        from pivy import coin
+        box = constraint_bound_box(sketch, index)
+        view = Gui.ActiveDocument.ActiveView
+        if box is None or not hasattr(view, "getCameraNode"):
+            return
+        # hauteur visible : la contrainte et sa cote occupent environ 1/3 de la fenêtre, pour
+        # voir l'environnement ; une contrainte sur un seul point : au moins 5 % de l'esquisse
+        sketch_size = sketch.Shape.BoundBox.DiagonalLength if not sketch.Shape.isNull() else 0
+        extent = max(box.XLength, box.YLength, box.ZLength, sketch_size * 0.05, 1.0)
+        size = 3 * extent
+        center = box.Center
+        direction = view.getViewDirection()  # de l'œil vers la scène
+        camera = view.getCameraNode()
+        if camera.isOfType(coin.SoOrthographicCamera.getClassTypeId()):
+            distance = camera.focalDistance.getValue()
+            camera.height.setValue(size)
+        else:  # perspective
+            distance = size / 2 / math.tan(camera.heightAngle.getValue() / 2)
+            camera.focalDistance.setValue(distance)
+        eye = center - direction * distance
+        camera.position.setValue(coin.SbVec3f(eye.x, eye.y, eye.z))
+    except Exception as e:  # volontaire : simple aide visuelle
+        print("Zoom sur la contrainte impossible :", sketch.Name, index, e)
 
 
 def show_selected_constraint_in_task_list():

@@ -26,6 +26,8 @@ Select the starting point, then run the macro:
 
 **Columns:** Label/alias, Expression, Result and constraint Type can be shown or hidden.
 
+**Double-click:** *Zoom on constraint* checked, double-clicking a constraint also frames the 3D view on it: the elements it links and its dimension take about 1/3 of the window, to see around; unchecked, the view does not move (useful when you have set your zoom precisely).
+
 **Error detection in the FreeCAD document:**
 - **Red**: the cell or property is in error (cell error, expression that fails, value refused by FreeCAD, invalid object, sketch constraint refused by the solver).
 - **Bold red**: the error starts here; a red line without bold gets its error from another line (shown in its tooltip).
@@ -70,6 +72,8 @@ Sélectionnez le point de départ, puis lancez la macro :
 - *Vide* : cochée, les points de départ sélectionnés sans aucun lien sont aussi affichés (ex : une cellule qui n'utilise rien et que rien n'utilise, une cellule vide, une contrainte sans expression). Les lignes qui ont des liens restent affichées comme d'habitude.
 
 **Colonnes :** Label/alias, Expression, Résultat et Type de contrainte peuvent être affichés ou masqués.
+
+**Double-clic :** *Zoom sur contrainte* cochée, le double-clic sur une contrainte cadre aussi la vue 3D sur elle : les éléments qu'elle relie et sa cote occupent environ 1/3 de la fenêtre, pour voir autour ; décochée, la vue ne bouge pas (utile quand on a réglé son zoom précisément).
 
 **Détection des erreurs dans le document FreeCAD :**
 - **Rouge** : la cellule ou la propriété est en erreur (erreur de cellule, expression qui échoue, valeur refusée par FreeCAD, objet invalide, contrainte d'esquisse refusée par le solveur).
