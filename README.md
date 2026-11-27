@@ -12,7 +12,8 @@ The language used is the one you selected in your FreeCAD preferences.
 
 Select the starting point, then run the macro:
 - one or several cells in an open spreadsheet;
-- a property in the property view (e.g. Length of a Pad);
+- one or several properties in the property view (e.g. Length of a Pad);
+- one or several constraints in a sketch being edited (in the 3D view or the constraint list), or elements of the sketch (line, circle, point, axis...): all the constraints on these elements are then selected in the sketch, including those without a value (perpendicular...), and the tree starts from them; a constraint without a name is shown as `Sketch.Constraints[5]  (Constraint6)`: the index of the expression starts at 0, the number in the FreeCAD list at 1;
 - one or several objects in the tree or the 3D view (Body, Sketch, Pad...): their properties and cells that have an expression, are used or are in error, including the content of a Body, Part or group;
 - the document, at the top of the tree, to analyse the whole project.
 
@@ -20,6 +21,7 @@ Select the starting point, then run the macro:
 - *Uses* / *Used by*: the two branches of each line.
 - *Cells*, *Constraints*, *Others*: the kinds of lines shown.
 - *Errors*: when checked, the lines in error are always shown, with what they use. When unchecked, it does not prevent the lines in error from being shown. With *Errors* alone, you only see the errors and their causes.
+- *Empty*: when checked, the selected starting points without any link are also shown (e.g. a cell that uses nothing and that nothing uses, an empty cell, a constraint without expression). The lines with links are shown as usual.
 
 **Columns:** Label/alias, Expression, Result and constraint Type can be shown or hidden.
 
@@ -53,7 +55,8 @@ La langue est celle que vous avez choisie dans les préférences de FreeCAD.
 
 Sélectionnez le point de départ, puis lancez la macro :
 - une ou plusieurs cellules dans un tableur ouvert ;
-- une propriété dans la fenêtre des propriétés (ex : Longueur d'une protrusion) ;
+- une ou plusieurs propriétés dans la fenêtre des propriétés (ex : Longueur d'une protrusion) ;
+- une ou plusieurs contraintes dans une esquisse en cours d'édition (vue 3D ou liste des contraintes), ou des éléments de l'esquisse (ligne, cercle, point, axe...) : toutes les contraintes de ces éléments sont alors sélectionnées dans l'esquisse, y compris celles sans valeur (perpendicularité...), et l'arbre part d'elles ; une contrainte sans nom est affichée `Sketch.Constraints[5]  (Constraint6)` : l'index de l'expression part de 0, le numéro de la liste de FreeCAD de 1 ;
 - un ou plusieurs objets dans l'arbre ou la vue 3D (Body, esquisse, protrusion...) : leurs propriétés et cellules qui ont une expression, sont utilisées ou sont en erreur, y compris le contenu d'un Body, d'un Part ou d'un groupe ;
 - le document, tout en haut de l'arbre, pour analyser tout le projet.
 
@@ -61,6 +64,7 @@ Sélectionnez le point de départ, puis lancez la macro :
 - *Utilise* / *Est utilisé par* : les deux branches de chaque ligne.
 - *Cellules*, *Contraintes*, *Autres* : les types de lignes affichées.
 - *Erreurs* : cochée, les lignes en erreur sont toujours affichées, avec ce qu'elles utilisent. Décochée, elle n'empêche pas pour autant d'afficher les lignes en erreur. Avec *Erreurs* seule, on ne voit que les erreurs et leurs causes.
+- *Vide* : cochée, les points de départ sélectionnés sans aucun lien sont aussi affichés (ex : une cellule qui n'utilise rien et que rien n'utilise, une cellule vide, une contrainte sans expression). Les lignes qui ont des liens restent affichées comme d'habitude.
 
 **Colonnes :** Label/alias, Expression, Résultat et Type de contrainte peuvent être affichés ou masqués.
 
