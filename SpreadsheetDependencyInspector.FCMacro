@@ -140,7 +140,8 @@ TRANSLATIONS = {
             "<p><b>Avant de lancer la macro, sélectionnez le point de départ :</b></p>"
             "<ul>"
             "<li>une ou plusieurs cellules dans un tableur ouvert ;</li>"
-            "<li>une propriété dans la fenêtre des propriétés (ex : Longueur d'une protrusion) ;</li>"
+            "<li>une ou plusieurs propriétés dans la fenêtre des propriétés (ex : Longueur d'une protrusion) ;</li>"
+            "<li>une ou plusieurs contraintes dans une esquisse en cours d'édition, ou des éléments (ligne, cercle, point…) : toutes leurs contraintes y sont alors sélectionnées ;</li>"
             "<li>un ou plusieurs objets dans l'arbre ou la vue 3D (Body, esquisse, "
             "protrusion…) : leurs propriétés qui ont une expression, sont utilisées ou en erreur ;</li>"
             "<li>le document, tout en haut de l'arbre, pour analyser tout le projet.</li>"
@@ -245,7 +246,8 @@ TRANSLATIONS = {
             "<p><b>Before running the macro, select the starting point:</b></p>"
             "<ul>"
             "<li>one or several cells in an open spreadsheet;</li>"
-            "<li>a property in the property view (e.g. Length of a Pad);</li>"
+            "<li>one or several properties in the property view (e.g. Length of a Pad);</li>"
+            "<li>one or several constraints in a sketch being edited, or elements (line, circle, point…): all their constraints are then selected in the sketch;</li>"
             "<li>one or several objects in the tree or the 3D view (Body, Sketch, Pad…): "
             "their properties that have an expression, are used or are in error;</li>"
             "<li>the document, at the top of the tree, to analyse the whole project.</li>"
@@ -611,8 +613,9 @@ def getPropertyValue(obj, path):
     return value
 
 
-def selectedPropertyInPropertyView(obj=None):
-    # obj : object owning the property (default : the single object selected in the tree)
+def selectedPropertyInPropertyView(obj=None, index=None):
+    # obj   : object owning the property (default : the single object selected in the tree)
+    # index : row of the property view to read (default : the selected or current row)
     # return a SelectedProperty, or None if no property of obj is selected
 
     def translated(label):  # label as displayed by FreeCAD in the current language
@@ -637,8 +640,9 @@ def selectedPropertyInPropertyView(obj=None):
     tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
     if tree is None:
         return None
-    selected = [i for i in tree.selectedIndexes() if i.column() == 0]
-    index = selected[0] if selected else tree.currentIndex().siblingAtColumn(0)
+    if index is None:
+        selected = [i for i in tree.selectedIndexes() if i.column() == 0]
+        index = selected[0] if selected else tree.currentIndex().siblingAtColumn(0)
 
     rows = []  # from the top (group) down to the clicked row
     while index.isValid():
@@ -1258,16 +1262,17 @@ def ask_keep_invalid_change(title, message, allow_keep=True):
 
 
 class RefDialog2(QtGui.QDialog):
-    def __init__(self, sheet, root_property=None, root_objects=None):
-        # root_property : ex 'Pad.Length' to start the tree from this property
-        #                 instead of the cells selected in the spreadsheet
+    def __init__(self, sheet, root_properties=None, root_objects=None):
+        # root_properties : ex ('Pad.Length',) or ('Sketch.Constraints[2]', 'Sketch.Constraints[5]')
+        #                   to start the tree from these properties or sketch constraints
+        #                   instead of the cells selected in the spreadsheet
         # root_objects  : ex ('Body',) to start the tree from these objects (and the
         #                 content of the containers) ; () = the whole document
         super(RefDialog2, self).__init__(FreeCADGui.getMainWindow())
 
         self.last_level = 0
         self.sheet = sheet
-        self.root_property = root_property
+        self.root_properties = root_properties
         self.root_objects = root_objects
         self.graph = build_graph()
 
@@ -1465,12 +1470,13 @@ class RefDialog2(QtGui.QDialog):
 
         # Sélections vues au dernier lancement : le bouton Relancer repart
         # de celle qui a changé depuis (propriété, cellules ou objets)
-        self._seen_property = current_selected_property()
+        self._seen_property = current_selected_properties()
         self._seen_cells = current_selected_cells()
         self._seen_objects = current_selected_objects()
+        self._seen_constraint = current_selected_constraints()
 
         # Où l'utilisateur a cliqué en dernier hors de cette fenêtre ("property",
-        # "objects" ou "cells"), relevé toutes les 300 ms : un simple relevé, qui n'intervient pas
+        # "constraint", "objects" ou "cells"), relevé toutes les 300 ms : un simple relevé, qui n'intervient pas
         # dans les clics (un suivi par le signal focusChanged cassait le double clic)
         self._last_source = None
         self._focus_timer = QtCore.QTimer(self)
@@ -1563,6 +1569,9 @@ class RefDialog2(QtGui.QDialog):
             obj = node.get("object")
             prop = node.get("property")
             nom = f"{obj}.{prop}" if obj and prop else ref
+            if re.fullmatch(r"Constraints\[\d+\]", prop or ""):
+                # Constraints[5] (index à partir de 0) = Constraint6 dans la liste de FreeCAD
+                nom += f"  (Constraint{constraint_index(node) + 1})"
             alias = node.get("label") or ""
             v = node.get("value")
             if v is not None:
@@ -1756,6 +1765,11 @@ class RefDialog2(QtGui.QDialog):
         tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
         if tree is not None and (focus is tree or tree.isAncestorOf(focus)):
             self._last_source = "property"
+        elif (current_selected_cells() is None and sketch_in_edit() is not None
+              and not model_tree_has_focus()):
+            # sketch en édition (vue 3D ou panneau Tâches) : ses contraintes ou éléments
+            # sélectionnés, même s'il n'y en a plus aucun
+            self._last_source = "constraint"
         elif object_view_has_focus():  # arbre FreeCAD ou vue 3D
             self._last_source = "objects"
         elif current_selected_cells() is not None:  # fenêtre active = un tableur
@@ -1763,32 +1777,41 @@ class RefDialog2(QtGui.QDialog):
 
     def on_refresh(self):
         current = {
-            "property": current_selected_property(),
+            "property": current_selected_properties(),
             "cells": current_selected_cells(),
             "objects": current_selected_objects(),
+            "constraint": current_selected_constraints(),
         }
         seen = {
             "property": self._seen_property,
             "cells": self._seen_cells,
             "objects": self._seen_objects,
+            "constraint": self._seen_constraint,
         }
-        # dernier clic connu : il l'emporte sur les changements de sélection ;
-        # sinon la sélection qui a changé (si plusieurs : tableur, puis propriété, puis objets)
+        # dernier clic connu : il l'emporte sur les changements de sélection ; sinon la
+        # sélection qui a changé (si plusieurs : tableur, contrainte, propriété, puis objets)
         source = None
-        if self._last_source is not None and current[self._last_source] is not None:
+        if self._last_source == "constraint" and sketch_in_edit() is not None:
+            source = "constraint"  # rien de sélectionné dans le sketch : arbre vide
+        elif self._last_source is not None and current[self._last_source] is not None:
             source = self._last_source
         else:
-            source = next((s for s in ("cells", "property", "objects")
+            source = next((s for s in ("cells", "constraint", "property", "objects")
                            if current[s] is not None and current[s] != seen[s]), None)
         if source == "property":
-            self.root_property, self.root_objects = current["property"], None
+            self.root_properties, self.root_objects = current["property"], None
+        elif source == "constraint":
+            # sélectionner dans le sketch les contraintes des éléments sélectionnés
+            current["constraint"] = current_selected_constraints(select=True)
+            self.root_properties, self.root_objects = current["constraint"] or (), None
         elif source == "objects":
-            self.root_property, self.root_objects = None, current["objects"]
+            self.root_properties, self.root_objects = None, current["objects"]
         elif source == "cells":
-            self.root_property, self.root_objects = None, None
+            self.root_properties, self.root_objects = None, None
         self._seen_property = current["property"]
         self._seen_cells = current["cells"]
         self._seen_objects = current["objects"]
+        self._seen_constraint = current["constraint"]
         self.recompute()
 
     # --------------------------------------------------------
@@ -1816,7 +1839,7 @@ class RefDialog2(QtGui.QDialog):
             #         sinon les cellules sélectionnées dans la feuille
             #         roots : [(ligne titre de l'objet ou None, [refs])]
             # ------------------------------------------------------------
-            if self.root_property is not None:
+            if self.root_properties is not None:
                 roots = [(None, self.property_roots())]
             elif self.root_objects is not None:
                 roots = self.object_roots()
@@ -1861,10 +1884,13 @@ class RefDialog2(QtGui.QDialog):
     # --------------------------------------------------------
     def title_target(self):
         doc = App.ActiveDocument
-        if self.root_property is not None:
-            obj_name, _, path = self.root_property.partition(".")
-            obj = doc.getObject(obj_name)
-            return (obj.Label if obj else obj_name) + "." + path
+        if self.root_properties is not None:
+            names = []
+            for ref in self.root_properties:
+                obj_name, _, path = ref.partition(".")
+                obj = doc.getObject(obj_name)
+                names.append((obj.Label if obj else obj_name) + "." + path)
+            return ", ".join(names)
         if self.root_objects is not None:
             if not self.root_objects:
                 return doc.Label
@@ -1901,7 +1927,7 @@ class RefDialog2(QtGui.QDialog):
         self.graph = build_graph()  # la propriété ou ses liens ont pu changer
         self.setWindowTitle(f"{tr('title')} – {self.title_target()}")
         self.tree.clear()
-        return [self.root_property] if self.root_property in self.graph else []
+        return [ref for ref in self.root_properties if ref in self.graph]
 
     # --------------------------------------------------------
     # Point de départ = les cellules sélectionnées dans la feuille
@@ -2491,6 +2517,10 @@ class RefDialog2(QtGui.QDialog):
         # Mettre la vue 3D (sketch en édition) au premier plan, pour que l'utilisateur la voie
         self.show3DView(doc)
 
+        # Panneau de gauche : la contrainte dans la liste des contraintes, une fois le
+        # panneau Tâches ouvert (setEdit) et la sélection reportée dans la liste
+        QtCore.QTimer.singleShot(300, show_selected_constraint_in_task_list)
+
     # ---------------------------------------------------------
     # Sélectionne des propriétés (liste de (objet, chemin)) : les objets dans l'arbre
     # FreeCAD, et s'il n'y en a qu'un, la propriété dans la fenêtre des propriétés,
@@ -2858,13 +2888,20 @@ class RefDialog2(QtGui.QDialog):
 # ------------------------------------------------------------
 # Sélections courantes (pour le bouton Relancer)
 # ------------------------------------------------------------
-def current_selected_property():
-    # ex 'Pad.Length', ou None si aucune propriété n'est sélectionnée
+def current_selected_properties():
+    # propriétés sélectionnées dans la fenêtre des propriétés, ex ('Pad.Length', 'Pad.Offset'),
+    # ou None si aucune ne l'est
     try:
-        selected = selectedPropertyInPropertyView()
+        tree = Gui.getMainWindow().findChild(QtGui.QTreeView, "propertyEditorData")
+        rows = [i for i in tree.selectedIndexes() if i.column() == 0] if tree is not None else []
+        if len(rows) > 1:  # plusieurs lignes sélectionnées (Ctrl+clic)
+            selected = [selectedPropertyInPropertyView(index=i) for i in rows]
+        else:
+            selected = [selectedPropertyInPropertyView()]
     except Exception:  # volontaire : simple aide au choix du point de départ
         return None
-    return None if selected is None else selected.obj.Name + "." + selected.path
+    refs = tuple(dict.fromkeys(p.obj.Name + "." + p.path for p in selected if p is not None))
+    return refs or None
 
 
 def current_selected_cells():
@@ -2876,6 +2913,118 @@ def current_selected_cells():
     except Exception:  # volontaire : vue 3D, pas de document...
         return None
     return (sheet.Name, tuple(str(c) for c in cells))
+
+
+def sketch_in_edit():
+    # le sketch en cours d'édition, ou None
+    try:
+        obj = getattr(Gui.ActiveDocument.getInEdit(), "Object", None)
+    except Exception:  # volontaire : pas de document, rien en édition
+        return None
+    return obj if obj is not None and hasattr(obj, "Constraints") else None
+
+
+GEO_UNDEF = -2000  # Constraint.First / Second / Third non utilisé
+
+
+def current_selected_constraints(select=False):
+    # Contraintes du sketch en cours d'édition qui servent de point de départ, sous la forme
+    # de leur expression (ex ('Sketch.Constraints[3]', 'Sketch.Constraints.largeur')),
+    # ou None s'il n'y en a pas :
+    # - les contraintes sélectionnées, dans l'ordre de la sélection ;
+    # - puis toutes celles qui portent sur les éléments sélectionnés (ligne, cercle, point,
+    #   axe, géométrie externe), y compris celles sans valeur (perpendicularité...).
+    # select : sélectionner aussi ces dernières dans le sketch (en vert)
+    sketch = sketch_in_edit()
+    if sketch is None:
+        return None
+    count = len(sketch.Constraints)
+    indexes = []      # index des contraintes, à partir de 0
+    geos = set()      # géométries sélectionnées : Edge1 = 0, H_Axis = -1, V_Axis = -2, ExternalEdge1 = -3
+    points = set()    # points sélectionnés : (géométrie, position 1 début, 2 fin, 3 centre)
+    for sel in Gui.Selection.getSelectionEx():
+        for sub in sel.SubElementNames:  # ex 'Edge4', ou 'Sketch.Edge4' (via le Body)
+            prefix, _, element = sub.rpartition(".")
+            if not (sel.Object == sketch or prefix.split(".")[-1] == sketch.Name):
+                continue
+            match = re.fullmatch(r"(Constraint|Edge|ExternalEdge|Vertex)(\d+)", element)
+            if element == "H_Axis":
+                geos.add(-1)
+            elif element == "V_Axis":
+                geos.add(-2)
+            elif element == "RootPoint":
+                points.add((-1, 1))
+            elif match:
+                kind, number = match.group(1), int(match.group(2))
+                if kind == "Constraint":  # Constraint1 = Constraints[0]
+                    if number - 1 < count and number - 1 not in indexes:
+                        indexes.append(number - 1)
+                elif kind == "Edge":
+                    geos.add(number - 1)
+                elif kind == "ExternalEdge":
+                    geos.add(-2 - number)
+                else:
+                    try:
+                        geo, pos = sketch.getGeoVertexIndex(number - 1)
+                        points.add((geo, int(pos)))
+                    except Exception as e:  # volontaire : point introuvable, on l'ignore
+                        print("Point du sketch non trouvé :", element, e)
+
+    # contraintes des éléments sélectionnés : une ligne avec ses extrémités, un point seul
+    added = []
+    if geos or points:
+        for i, c in enumerate(sketch.Constraints):
+            if i in indexes:
+                continue
+            ends = ((c.First, c.FirstPos), (c.Second, c.SecondPos), (c.Third, c.ThirdPos))
+            if any(geo in geos or (geo, int(pos)) in points for geo, pos in ends if geo != GEO_UNDEF):
+                indexes.append(i)
+                added.append(i)
+    if select and added:
+        body = sketch.getParentGeoFeatureGroup() if hasattr(sketch, "getParentGeoFeatureGroup") else None
+        for i in added:
+            if body is not None:
+                Gui.Selection.addSelection(sketch.Document.Name, body.Name, f"{sketch.Name}.Constraint{i + 1}")
+            else:
+                Gui.Selection.addSelection(sketch.Document.Name, sketch.Name, f"Constraint{i + 1}")
+    if not indexes:
+        return None
+
+    # la forme employée par leur expression, s'il y en a une
+    expression_paths = {}
+    for prop, _ in getattr(sketch, "ExpressionEngine", ()):
+        path = prop.lstrip(".")
+        index = constraint_index({"kind": "property", "object": sketch.Name, "property": path})
+        if index is not None:
+            expression_paths[index] = path
+    refs = []
+    for index in indexes:
+        name = sketch.Constraints[index].Name
+        path = expression_paths.get(index) or (f"Constraints.{name}" if name else f"Constraints[{index}]")
+        refs.append(sketch.Name + "." + path)
+    return tuple(refs)
+
+
+def show_selected_constraint_in_task_list():
+    # Panneau Tâches du sketch en édition : affiche l'onglet Tâches et fait défiler la liste
+    # des contraintes jusqu'à la contrainte sélectionnée (FreeCAD l'y met en surbrillance
+    # mais ne fait pas défiler). La sélection FreeCAD n'est pas modifiée
+    try:
+        for lst in Gui.getMainWindow().findChildren(QtGui.QListWidget, "listWidgetConstraints"):
+            items = lst.selectedItems()
+            if not items:  # autre sketch, ou contrainte masquée par le filtre de la liste
+                continue
+            widget = lst
+            while widget is not None:
+                parent = widget.parentWidget()
+                if isinstance(parent, QtGui.QStackedWidget) and isinstance(parent.parentWidget(), QtGui.QTabWidget):
+                    parent.parentWidget().setCurrentWidget(widget)  # onglet Tâches
+                elif isinstance(widget, QtGui.QScrollArea):
+                    widget.ensureWidgetVisible(lst)  # la liste dans le panneau Tâches
+                widget = parent
+            lst.scrollToItem(items[0], QtGui.QAbstractItemView.PositionAtCenter)
+    except Exception as e:  # volontaire : simple aide visuelle
+        print("Liste des contraintes non positionnée :", e)
 
 
 def current_selected_objects():
@@ -2936,6 +3085,16 @@ def property_view_has_selection():
     return tree is not None and any(i.column() == 0 for i in tree.selectedIndexes())
 
 
+def model_tree_has_focus():
+    # le focus est dans l'arbre FreeCAD (onglet Modèle)
+    widget = QtGui.QApplication.focusWidget()
+    while widget is not None:
+        if widget.metaObject().className() == "Gui::TreeWidget":
+            return True
+        widget = widget.parentWidget()
+    return False
+
+
 def object_view_has_focus():
     # le focus est dans l'arbre FreeCAD ou dans une vue 3D
     widget = QtGui.QApplication.focusWidget()
@@ -2953,20 +3112,24 @@ except:
     sheet = None
 
 # Point de départ :
-# - une propriété : le focus est dans la fenêtre des propriétés, ou la fenêtre
-#   active n'est pas un tableur (ex : vue 3D) et une propriété y est sélectionnée
+# - une ou plusieurs contraintes : sélectionnées dans le sketch en cours d'édition, ou portant
+#   sur les éléments qui y sont sélectionnés (elles y sont alors sélectionnées aussi), la
+#   fenêtre active n'étant pas un tableur et le focus n'étant pas dans la fenêtre des propriétés
+# - une ou plusieurs propriétés : le focus est dans la fenêtre des propriétés, ou la fenêtre
+#   active n'est pas un tableur (ex : vue 3D) et des propriétés y sont sélectionnées
 # - sinon des objets : le focus est dans l'arbre FreeCAD ou une vue 3D, ou la fenêtre
 #   active n'est pas un tableur ; le document sélectionné en haut de l'arbre = tout le document
 # - sinon les cellules sélectionnées dans le tableur actif
 # - rien de tout cela : fenêtre d'aide
-root_property = None
+root_properties = None
 root_objects = None
 if Gui.ActiveDocument is not None:
-    if property_view_has_focus() or (sheet is None and property_view_has_selection()):
-        selected_property = selectedPropertyInPropertyView()
-        if selected_property is not None:
-            root_property = selected_property.obj.Name + "." + selected_property.path
-    if root_property is None and (sheet is None or object_view_has_focus()):
+    if sheet is None and not property_view_has_focus():
+        root_properties = current_selected_constraints(select=True)
+    if root_properties is None and (property_view_has_focus()
+                                    or (sheet is None and property_view_has_selection())):
+        root_properties = current_selected_properties()
+    if root_properties is None and (sheet is None or object_view_has_focus()):
         root_objects = current_selected_objects()
 
 if root_objects is not None:
@@ -2981,9 +3144,9 @@ if root_objects is not None:
             tr("object_no_dependency").format(obj=dlg.title_target())
         )
         dlg.deleteLater()  # fenêtre non affichée : arrêter son minuteur
-elif root_property is not None:
-    dlg = RefDialog2(sheet, root_property)
-    if root_property in dlg.graph:
+elif root_properties is not None:
+    dlg = RefDialog2(sheet, root_properties)
+    if any(ref in dlg.graph for ref in root_properties):
         QtGui.QApplication.instance().setProperty("qt_delay_before_tooltip", 200)
         dlg.show()
     else:

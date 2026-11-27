@@ -12,7 +12,8 @@ The language used is the one you selected in your FreeCAD preferences.
 
 Select the starting point, then run the macro:
 - one or several cells in an open spreadsheet;
-- a property in the property view (e.g. Length of a Pad);
+- one or several properties in the property view (e.g. Length of a Pad);
+- one or several constraints in a sketch being edited (in the 3D view or the constraint list), or elements of the sketch (line, circle, point, axis...): all the constraints on these elements are then selected in the sketch, including those without a value (perpendicular...), and the tree starts from them; a constraint without a name is shown as `Sketch.Constraints[5]  (Constraint6)`: the index of the expression starts at 0, the number in the FreeCAD list at 1;
 - one or several objects in the tree or the 3D view (Body, Sketch, Pad...): their properties and cells that have an expression, are used or are in error, including the content of a Body, Part or group;
 - the document, at the top of the tree, to analyse the whole project.
 
@@ -53,7 +54,8 @@ La langue est celle que vous avez choisie dans les préférences de FreeCAD.
 
 Sélectionnez le point de départ, puis lancez la macro :
 - une ou plusieurs cellules dans un tableur ouvert ;
-- une propriété dans la fenêtre des propriétés (ex : Longueur d'une protrusion) ;
+- une ou plusieurs propriétés dans la fenêtre des propriétés (ex : Longueur d'une protrusion) ;
+- une ou plusieurs contraintes dans une esquisse en cours d'édition (vue 3D ou liste des contraintes), ou des éléments de l'esquisse (ligne, cercle, point, axe...) : toutes les contraintes de ces éléments sont alors sélectionnées dans l'esquisse, y compris celles sans valeur (perpendicularité...), et l'arbre part d'elles ; une contrainte sans nom est affichée `Sketch.Constraints[5]  (Constraint6)` : l'index de l'expression part de 0, le numéro de la liste de FreeCAD de 1 ;
 - un ou plusieurs objets dans l'arbre ou la vue 3D (Body, esquisse, protrusion...) : leurs propriétés et cellules qui ont une expression, sont utilisées ou sont en erreur, y compris le contenu d'un Body, d'un Part ou d'un groupe ;
 - le document, tout en haut de l'arbre, pour analyser tout le projet.
 
