@@ -56,8 +56,6 @@ When a recompute fails (object marked with an exclamation mark, a Pad that no lo
 5. **Fix**: in FreeCAD as usual (spreadsheet, property view, sketch), or directly in the tree of the macro (Expression column). If you make the change in the tree of the macro and it results in a FreeCAD error, the macro warns you and offers to cancel the change.
 6. **Check**: click the refresh button. When no line is red any more, the errors are solved.
 
-**Sketch that no longer solves:** open the sketch, select the line, circle or point concerned, then run the macro (or click refresh). All the constraints of these elements are selected in the sketch, and the tree shows which cells and properties drive each of them: you quickly see which value of the spreadsheet has changed. The constraints refused by the solver are in bold red.
-
 
 **Français**
 
@@ -117,5 +115,3 @@ Quand un recalcul échoue (objet marqué d'un point d'exclamation, protrusion qu
 4. **Aller à la source** : double-cliquez sur la ligne en orange ou en rouge gras pour ouvrir la cellule dans son tableur, la propriété, ou la contrainte dans son esquisse. Si *Zoom sur contrainte* est cochée, la vue cadre la contrainte dans son environnement. Un double-clic sur l'expression d'une ligne sélectionne ce qu'elle utilise.
 5. **Corriger** : dans FreeCAD comme d'habitude (tableur, fenêtre des propriétés, esquisse), ou directement dans l'arbre de la macro (colonne Expression). Si vous faites la modification dans l'arbre de la macro et qu'il en résulte une erreur FreeCAD, la macro vous prévient et vous propose d'annuler la modification.
 6. **Vérifier** : cliquez sur le bouton refresh. Quand plus aucune ligne n'est rouge, les erreurs sont résolues.
-
-**Esquisse qui ne se résout plus :** ouvrez l'esquisse, sélectionnez la ligne, le cercle ou le point concerné, puis lancez la macro (ou cliquez sur refresh). Toutes les contraintes de ces éléments sont sélectionnées dans l'esquisse, et l'arbre montre de quelles cellules et propriétés dépend chacune : on voit vite quelle valeur du tableur a changé. Les contraintes refusées par le solveur sont en rouge gras.
