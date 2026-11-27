@@ -6,7 +6,8 @@ The macro shows, as an expandable tree, the dependencies between spreadsheet cel
 
 The macro is multilingual, currently supporting English and French.
 The language used is the one you selected in your FreeCAD preferences.
-<img width="871" height="540" alt="image" src="https://github.com/user-attachments/assets/dcf05791-4f31-4486-ba7b-744acf0e1fb3" />
+<img width="872" height="536" alt="image" src="https://github.com/user-attachments/assets/a840730c-19a2-40df-8f37-89d8a917a505" />
+
 
 **Usage:**
 
@@ -24,6 +25,8 @@ Select the starting point, then run the macro:
 - *Empty*: when checked, the selected starting points without any link are also shown (e.g. a cell that uses nothing and that nothing uses, an empty cell, a constraint without expression). The lines with links are shown as usual.
 
 **Columns:** Label/alias, Expression, Result and constraint Type can be shown or hidden.
+
+**Double-click:** *Zoom on constraint* checked, double-clicking a constraint also frames the 3D view on it: the elements it links and its dimension take about 1/3 of the window, to see around; unchecked, the view does not move (useful when you have set your zoom precisely).
 
 **Error detection in the FreeCAD document:**
 - **Red**: the cell or property is in error (cell error, expression that fails, value refused by FreeCAD, invalid object, sketch constraint refused by the solver).
@@ -49,7 +52,8 @@ La macro affiche sous forme d'arbre dépliable les dépendances entre les cellul
 
 La macro est multilingue, pour l'instant anglais / français.
 La langue est celle que vous avez choisie dans les préférences de FreeCAD.
-<img width="873" height="539" alt="image" src="https://github.com/user-attachments/assets/1719e6d9-e451-47e2-98c6-116357c05b4c" />
+<img width="868" height="540" alt="image" src="https://github.com/user-attachments/assets/133c5d25-64ae-4dc8-8332-8f2463e750e6" />
+
 
 
 **Mode d'utilisation :**
@@ -68,6 +72,8 @@ Sélectionnez le point de départ, puis lancez la macro :
 - *Vide* : cochée, les points de départ sélectionnés sans aucun lien sont aussi affichés (ex : une cellule qui n'utilise rien et que rien n'utilise, une cellule vide, une contrainte sans expression). Les lignes qui ont des liens restent affichées comme d'habitude.
 
 **Colonnes :** Label/alias, Expression, Résultat et Type de contrainte peuvent être affichés ou masqués.
+
+**Double-clic :** *Zoom sur contrainte* cochée, le double-clic sur une contrainte cadre aussi la vue 3D sur elle : les éléments qu'elle relie et sa cote occupent environ 1/3 de la fenêtre, pour voir autour ; décochée, la vue ne bouge pas (utile quand on a réglé son zoom précisément).
 
 **Détection des erreurs dans le document FreeCAD :**
 - **Rouge** : la cellule ou la propriété est en erreur (erreur de cellule, expression qui échoue, valeur refusée par FreeCAD, objet invalide, contrainte d'esquisse refusée par le solveur).
